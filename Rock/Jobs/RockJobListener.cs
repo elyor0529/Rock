@@ -171,13 +171,13 @@ namespace Rock.Jobs
 
                 var warningException = exceptionToLog as RockJobWarningException;
 
+                // log the exception to the database (even if it is a RockJobWarningException)
+                ExceptionLogService.LogException( exceptionToLog, null );
+
                 if ( warningException == null )
                 {
                     // put the exception into the status
                     job.LastStatus = "Exception";
-
-                    // log the exception to the database (
-                    ExceptionLogService.LogException( exceptionToLog, null );
 
                     AggregateException aggregateException = exceptionToLog as AggregateException;
                     if ( aggregateException != null && aggregateException.InnerExceptions != null && aggregateException.InnerExceptions.Count > 1 )
