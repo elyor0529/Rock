@@ -174,8 +174,9 @@ namespace Rock.Jobs
             //  Final count and report
             // ***********************
 
-
             StringBuilder jobSummaryBuilder = new StringBuilder();
+            jobSummaryBuilder.AppendLine( "Summary:" );
+            jobSummaryBuilder.AppendLine( "" );
             foreach ( var rockCleanupJobResult in rockCleanupJobResultList )
             {
                 jobSummaryBuilder.AppendLine( $"{GetFormattedResult( rockCleanupJobResult )}" );
@@ -183,7 +184,13 @@ namespace Rock.Jobs
 
             if ( rockCleanupJobResultList.Any( a => a.RowsAffected > 0 ) || rockCleanupJobResultList.Any( a => a.HasException ) )
             {
-                context.Result = "Summary:\n\n" + jobSummaryBuilder.ToString();
+                if ( rockCleanupJobResultList.Any( a => a.HasException ) )
+                {
+                    //jobSummaryBuilder.AppendLine( "\n<span class='label label-warning'>Warning</span> Some jobs have errors. See exception log for details." );
+                    jobSummaryBuilder.AppendLine( "\n**Some jobs have errors. See exception log for details." );
+                }
+
+                context.Result = jobSummaryBuilder.ToString();
             }
             else
             {
@@ -208,22 +215,32 @@ namespace Rock.Jobs
         {
             if ( rockCleanupJobResult.HasException )
             {
-                return $"{ rockCleanupJobResult.Title} failed: <div class='alert alert-danger'>{rockCleanupJobResult.Exception}</div>";
+                return $"<span class='label label-danger'>Error</span> { rockCleanupJobResult.Title}";
             }
             else
             {
                 string completionResultString;
                 if ( rockCleanupJobResult.RowsAffected > 0 )
                 {
-                    completionResultString = string.Format( "{0:n0} rows", rockCleanupJobResult.RowsAffected );
+                    completionResultString = string.Format( "processed {0:n0} rows", rockCleanupJobResult.RowsAffected );
                 }
                 else
                 {
-                    completionResultString = "completed";
+                    completionResultString = string.Empty;
                 }
 
                 var titleString = rockCleanupJobResult.Title;
-                return $"{titleString} ({completionResultString} [{rockCleanupJobResult.Elapsed.TotalMilliseconds})ms]";
+                string elapsedTimeString = string.Empty;
+                if ( rockCleanupJobResult.Elapsed.TotalMinutes > 1 )
+                {
+                    elapsedTimeString = $"[{Math.Round( rockCleanupJobResult.Elapsed.TotalMinutes, 1 )} minutes]";
+                }
+                else if ( rockCleanupJobResult.Elapsed.TotalSeconds > 1 )
+                {
+                    elapsedTimeString = $"[{Math.Round( rockCleanupJobResult.Elapsed.TotalSeconds, 1 )} seconds]";
+                }
+
+                return $"<span class='label label-success'>Success</span> {titleString} {completionResultString} {elapsedTimeString}";
             }
         }
 
@@ -237,7 +254,6 @@ namespace Rock.Jobs
             var stopwatch = new Stopwatch();
             try
             {
-
                 jobContext.UpdateLastStatusMessage( $"Running {cleanupTitle}" );
                 stopwatch.Start();
                 var cleanupRowsAffected = cleanupMethod();
