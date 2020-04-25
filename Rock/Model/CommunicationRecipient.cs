@@ -146,7 +146,17 @@ namespace Rock.Model
         /// A <see cref="System.String"/> representing the response code.
         /// </value>
         [DataMember]
+        [Obsolete( "Use CommunicationRecipientResponseCodeId instead" )]
         public string ResponseCode { get; set; }
+
+        /// <summary>
+        /// Gets or sets the communication recipient response code identifier.
+        /// </summary>
+        /// <value>
+        /// The communication recipient response code identifier.
+        /// </value>
+        [DataMember]
+        public int? CommunicationRecipientResponseCodeId { get; set; }
 
         /// <summary>
         /// Gets or sets the AdditionalMergeValues as a Json string.
@@ -218,6 +228,15 @@ namespace Rock.Model
         /// </value>
         [DataMember]
         public virtual EntityType MediumEntityType { get; set; }
+
+        /// <summary>
+        /// Gets or sets the communication recipient response code.
+        /// </summary>
+        /// <value>
+        /// The communication recipient response code.
+        /// </value>
+        [DataMember]
+        public virtual CommunicationRecipientResponseCode CommunicationRecipientResponseCode { get; set; }
 
         /// <summary>
         /// Gets or sets a dictionary containing the Additional Merge values for this communication
@@ -450,6 +469,7 @@ namespace Rock.Model
             this.HasRequired( r => r.PersonAlias ).WithMany().HasForeignKey( r => r.PersonAliasId ).WillCascadeOnDelete( false );
             this.HasRequired( r => r.Communication ).WithMany( c => c.Recipients ).HasForeignKey( r => r.CommunicationId ).WillCascadeOnDelete( true );
             this.HasOptional( c => c.MediumEntityType ).WithMany().HasForeignKey( c => c.MediumEntityTypeId ).WillCascadeOnDelete( false );
+            this.HasOptional( c => c.CommunicationRecipientResponseCode ).WithMany().HasForeignKey( c => c.CommunicationRecipientResponseCodeId ).WillCascadeOnDelete( false );
         }
     }
 

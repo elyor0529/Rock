@@ -161,13 +161,34 @@ namespace Rock.Model
         /// <param name="responseCode">The response code. If null/empty/whitespace then one is generated</param>
         /// <param name="communicationName">Name of the communication.</param>
         /// <returns></returns>
+        [RockObsolete( "1.11" )]
+        [Obsolete( "Use the other CreateSMSCommunication" )]
         public Communication CreateSMSCommunication( Person fromPerson, int? toPersonAliasId, string message, DefinedValueCache fromPhone, string responseCode, string communicationName )
         {
-            RockContext rockContext = ( RockContext ) this.Context;
-
-            if ( responseCode.IsNullOrWhiteSpace() )
+            int? responseCodeId = null;
+            if ( responseCode.IsNotNullOrWhiteSpace() )
             {
-                responseCode = Rock.Communication.Medium.Sms.GenerateResponseCode( rockContext );
+                responseCodeId = Rock.Model.CommunicationRecipientResponseCode.GetResponseCodeIdFromResponseCode( responseCode );
+            }
+
+            return CreateSMSCommunication( fromPerson, toPersonAliasId, message, fromPhone, responseCodeId, communicationName );
+        }
+
+        /// <summary>
+        /// Creates the SMS communication.
+        /// </summary>
+        /// <param name="fromPerson">From person.</param>
+        /// <param name="toPersonAliasId">To person alias identifier.</param>
+        /// <param name="message">The message.</param>
+        /// <param name="fromPhone">From phone.</param>
+        /// <param name="responseCodeId">The response code identifier.</param>
+        /// <param name="communicationName">Name of the communication.</param>
+        /// <returns></returns>
+        public Communication CreateSMSCommunication( Person fromPerson, int? toPersonAliasId, string message, DefinedValueCache fromPhone, int? responseCodeId, string communicationName )
+        {
+            if ( !responseCodeId.HasValue )
+            {
+                responseCodeId = Rock.Model.CommunicationRecipientResponseCode.GetNewResponseCode().ResponseCodeId;
             }
 
             // add communication for reply
@@ -188,7 +209,7 @@ namespace Rock.Model
                 var recipient = new Rock.Model.CommunicationRecipient();
                 recipient.Status = CommunicationRecipientStatus.Pending;
                 recipient.PersonAliasId = toPersonAliasId.Value;
-                recipient.ResponseCode = responseCode;
+                recipient.CommunicationRecipientResponseCodeId = responseCodeId;
                 recipient.MediumEntityTypeId = EntityTypeCache.Get( "Rock.Communication.Medium.Sms" ).Id;
                 recipient.SentMessage = message;
                 communication.Recipients.Add( recipient );

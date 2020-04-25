@@ -39,25 +39,6 @@ namespace Rock.Communication.Medium
     [IntegerField( "Character Limit", "Set this to show a character limit countdown for SMS communications. Set to 0 to disable", false, 160 )]
     public class Sms : MediumComponent
     {
-        const int TOKEN_REUSE_DURATION = 30; // number of days between token reuse
-
-        /// <summary>
-        /// The highest value an SMS Response Code can contain. If you change this above 5 digits
-        /// then you must also change the regular expression in the ProcessResponse method.
-        /// </summary>
-        private const int RESPONSE_CODE_MAX = 90000;
-
-        /// <summary>
-        /// Define a key to use in the cache for storing our available response code list.
-        /// </summary>
-        private const string RESPONSE_CODE_CACHE_KEY = "Rock:Communication:Sms:ResponseCodeCache";
-
-        /// <summary>
-        /// Used by the GenerateResponseCode method to ensure exclusive access to the cached
-        /// available response code list.
-        /// </summary>
-        private static readonly object _responseCodesLock = new object();
-
         /// <summary>
         /// Gets the type of the communication.
         /// </summary>
@@ -131,17 +112,26 @@ namespace Rock.Communication.Medium
                             string responseCode = match.ToString();
 
                             var recipient = new CommunicationRecipientService( rockContext ).Queryable( "Communication" )
-                                                .Where( r => r.ResponseCode == responseCode )
+                                                .Where( r => r.CommunicationRecipientResponseCodeId.HasValue && r.CommunicationRecipientResponseCode.ResponseCode == responseCode )
                                                 .OrderByDescending( r => r.CreatedDateTime ).FirstOrDefault();
 
                             if ( recipient != null && recipient.Communication.SenderPersonAliasId.HasValue )
                             {
-                                CreateCommunication( fromPerson, fromPhone, recipient.Communication.SenderPersonAliasId.Value, message.Replace( responseCode, "" ), plainMessage, rockSmsFromPhoneDv, "", rockContext, out errorMessage );
+                                CreateCommunication(
+                                    fromPerson,
+                                    fromPhone,
+                                    recipient.Communication.SenderPersonAliasId.Value,
+                                    message.Replace( responseCode, "" ),
+                                    plainMessage,
+                                    rockSmsFromPhoneDv,
+                                    (int?)null,
+                                    rockContext,
+                                    out errorMessage );
                             }
                             else // send a warning message back to the medium recipient
                             {
                                 string warningMessage = string.Format( "A conversation could not be found with the response token {0}.", responseCode );
-                                CreateCommunication( fromPerson, fromPhone, fromPerson.PrimaryAliasId.Value, warningMessage, plainMessage, rockSmsFromPhoneDv, "", rockContext, out errorMessage );
+                                CreateCommunication( fromPerson, fromPhone, fromPerson.PrimaryAliasId.Value, warningMessage, plainMessage, rockSmsFromPhoneDv, (int?)null, rockContext, out errorMessage );
                             }
                         }
                         else
@@ -152,13 +142,12 @@ namespace Rock.Communication.Medium
                     else
                     {
                         // From and To person are not same person. For example, a person sent a message to the SMS PhoneNumber (DefinedValue). 
-                        string messageId = GenerateResponseCode( rockContext );
+                        var newResponseCode = CommunicationRecipientResponseCode.GetNewResponseCode();
                         int? toPersonPrimaryAliasId = toPerson?.PrimaryAliasId;
 
                         // NOTE: fromPerson will never be null since we would have created a Nameless Person record if there wasn't a regular person found
-                        message = $"-{fromPerson.FullName}-\n{message}\n( {messageId} )";
-                        CreateCommunication( fromPerson, fromPhone, toPersonPrimaryAliasId, message, plainMessage, rockSmsFromPhoneDv, messageId, rockContext, out errorMessage );
-
+                        message = $"-{fromPerson.FullName}-\n{message}\n( {newResponseCode.ResponseCode} )";
+                        CreateCommunication( fromPerson, fromPhone, toPersonPrimaryAliasId, message, plainMessage, rockSmsFromPhoneDv, newResponseCode.ResponseCodeId, rockContext, out errorMessage );
                     }
                 }
                 else
@@ -180,10 +169,10 @@ namespace Rock.Communication.Medium
         /// <param name="message">The message to send.</param>
         /// <param name="plainMessage">The plain message.</param>
         /// <param name="rockSmsFromPhoneDv">From phone.</param>
-        /// <param name="responseCode">The reponseCode to use for tracking the conversation.</param>
+        /// <param name="responseCodeId">The Id of the <see cref="CommunicationRecipientResponseCode"/> to use for tracking the conversation. Leave this null to have this generated automatically</param>
         /// <param name="rockContext">A context to use for database calls.</param>
         /// <param name="errorMessage">The error message.</param>
-        private void CreateCommunication( Person fromPerson, string messageKey, int? toPersonAliasId, string message, string plainMessage, DefinedValueCache rockSmsFromPhoneDv, string responseCode, Rock.Data.RockContext rockContext, out string errorMessage )
+        private void CreateCommunication( Person fromPerson, string messageKey, int? toPersonAliasId, string message, string plainMessage, DefinedValueCache rockSmsFromPhoneDv, int? responseCodeId, Rock.Data.RockContext rockContext, out string errorMessage )
         {
             errorMessage = string.Empty;
 
@@ -206,10 +195,10 @@ namespace Rock.Communication.Medium
 
             if ( enableResponseRecipientForwarding )
             {
-                CreateCommunicationMobile( fromPerson, toPersonAliasId, message, rockSmsFromPhoneDv, responseCode, rockContext );
+                CreateCommunicationMobile( fromPerson, toPersonAliasId, message, rockSmsFromPhoneDv, rockContext, responseCodeId );
             }
 
-            CreateCommunicationResponse( fromPerson, messageKey, toPersonAliasId, plainMessage, rockSmsFromPhoneDv, responseCode, rockContext );
+            CreateCommunicationResponse( fromPerson, messageKey, toPersonAliasId, plainMessage, rockSmsFromPhoneDv, rockContext );
         }
 
         /// <summary>
@@ -259,9 +248,9 @@ namespace Rock.Communication.Medium
         /// <param name="toPersonAliasId">To person alias identifier.</param>
         /// <param name="message">The message.</param>
         /// <param name="rockSmsFromPhoneDv">From phone.</param>
-        /// <param name="responseCode">The response code.</param>
         /// <param name="rockContext">The rock context.</param>
-        private void CreateCommunicationResponse( Person fromPerson, string messageKey, int? toPersonAliasId, string message, DefinedValueCache rockSmsFromPhoneDv, string responseCode, Rock.Data.RockContext rockContext )
+        /// <exception cref="Exception">Configuration Error. No SMS Transport Component is currently active.</exception>
+        private void CreateCommunicationResponse( Person fromPerson, string messageKey, int? toPersonAliasId, string message, DefinedValueCache rockSmsFromPhoneDv, Rock.Data.RockContext rockContext )
         {
             var smsMedium = EntityTypeCache.Get( SystemGuid.EntityType.COMMUNICATION_MEDIUM_SMS );
 
@@ -340,7 +329,7 @@ namespace Rock.Communication.Medium
         }
 
         /// <summary>
-        /// Creates the communication to the recipient's mobile device.
+        /// Creates the communication mobile.
         /// </summary>
         /// <param name="fromPerson">From person.</param>
         /// <param name="toPersonAliasId">To person alias identifier.</param>
@@ -348,13 +337,42 @@ namespace Rock.Communication.Medium
         /// <param name="fromPhone">From phone.</param>
         /// <param name="responseCode">The response code.</param>
         /// <param name="rockContext">The rock context.</param>
+        [Obsolete]
         public static void CreateCommunicationMobile( Person fromPerson, int? toPersonAliasId, string message, DefinedValueCache fromPhone, string responseCode, Rock.Data.RockContext rockContext )
+        {
+            // TODO
+        }
+
+        /// <summary>
+        /// Creates the communication to the recipient's mobile device.
+        /// </summary>
+        /// <param name="fromPerson">From person.</param>
+        /// <param name="toPersonAliasId">To person alias identifier.</param>
+        /// <param name="message">The message.</param>
+        /// <param name="fromPhone">From phone.</param>
+        /// <param name="rockContext">The rock context.</param>
+        public static void CreateCommunicationMobile( Person fromPerson, int? toPersonAliasId, string message, DefinedValueCache fromPhone, Rock.Data.RockContext rockContext)
+        {
+            CreateCommunicationMobile( fromPerson, toPersonAliasId, message, fromPhone, rockContext, null );
+        }
+
+        /// <summary>
+        /// Creates the communication to the recipient's mobile device with an option to specify the responseCodeId
+        /// </summary>
+        /// <param name="fromPerson">From person.</param>
+        /// <param name="toPersonAliasId">To person alias identifier.</param>
+        /// <param name="message">The message.</param>
+        /// <param name="fromPhone">From phone.</param>
+        /// <param name="responseCodeId">The response code identifier.</param>
+        /// <param name="rockContext">The rock context.</param>
+        [Obsolete("Who is using this?")]
+        public static void CreateCommunicationMobile( Person fromPerson, int? toPersonAliasId, string message, DefinedValueCache fromPhone, Rock.Data.RockContext rockContext, int? responseCodeId )
         {
             // NOTE: fromPerson should never be null since a Nameless Person record should have been created if a regular person record wasn't found
             string communicationName = fromPerson != null ? string.Format( "From: {0}", fromPerson.FullName ) : "From: unknown person";
 
             var communicationService = new CommunicationService( rockContext );
-            var communication = communicationService.CreateSMSCommunication( fromPerson, toPersonAliasId, message, fromPhone, responseCode, communicationName );
+            var communication = communicationService.CreateSMSCommunication( fromPerson, toPersonAliasId, message, fromPhone, responseCodeId, communicationName );
             rockContext.SaveChanges();
 
             // queue the sending
@@ -365,91 +383,14 @@ namespace Rock.Communication.Medium
         }
 
         /// <summary>
-        /// Generate a randomized list of available response codes that can be used for SMS tracking.
-        /// </summary>
-        /// <param name="rockContext">A context to use for database calls.</param>
-        /// <returns>A randomized <see cref="List{T}"/> of strings that are available for use.</returns>
-        static private List<string> GenerateAvailableResponseCodeList( Rock.Data.RockContext rockContext )
-        {
-            DateTime tokenStartDate = RockDateTime.Now.Subtract( new TimeSpan( TOKEN_REUSE_DURATION, 0, 0, 0 ) );
-            int[] blacklist = new int[] { 666, 911 };
-            int chunkSize = 100;
-            int smsEntityTypeId = EntityTypeCache.Get( Rock.SystemGuid.EntityType.COMMUNICATION_MEDIUM_SMS.AsGuid() ).Id;
-
-            //
-            // Generate a list of codes that are currently active in the database.
-            //
-            var activeCodes = new CommunicationRecipientService( rockContext ).Queryable()
-                                    .Where( c => c.MediumEntityTypeId == smsEntityTypeId )
-                                    .Where( c => System.Data.Entity.DbFunctions.Left( c.ResponseCode, 1 ) == "@" && c.CreatedDateTime > tokenStartDate )
-                                    .Select( c => c.ResponseCode )
-                                    .ToList();
-
-            //
-            // Starting at code 100, try to generate a list of available codes in small chunks until
-            // we have a list with at least 1 available code.
-            //
-            for ( int startValue = 100; startValue < RESPONSE_CODE_MAX - chunkSize; startValue += chunkSize )
-            {
-                var availableCodes = Enumerable.Range( startValue, chunkSize )
-                    .Where( i => !blacklist.Contains( i ) )
-                    .Select( i => string.Format( "@{0}", i ) )
-                    .Where( c => !activeCodes.Contains( c ) )
-                    .ToList();
-
-                if ( availableCodes.Any() )
-                {
-                    return availableCodes.OrderBy( c => Guid.NewGuid() ).ToList();
-                }
-            }
-
-            throw new Exception( "No available response codes." );
-        }
-
-        /// <summary>
         /// Creates a recipient token to help track conversations.
         /// </summary>
         /// <param name="rockContext">A context to use for database calls.</param>
         /// <returns>String token</returns>
+        [Obsolete( "Use CommunicationRecipientResponseCode.GetNewResponseCodeId instead" )]
         public static string GenerateResponseCode( Rock.Data.RockContext rockContext )
         {
-            DateTime tokenStartDate = RockDateTime.Now.Subtract( new TimeSpan( TOKEN_REUSE_DURATION, 0, 0, 0 ) );
-            var communicationRecipientService = new CommunicationRecipientService( rockContext );
-
-            lock ( _responseCodesLock )
-            {
-                var availableResponseCodes = RockCache.Get( RESPONSE_CODE_CACHE_KEY ) as List<string>;
-
-                //
-                // Try up to 1,000 times to find a code. This really should never go past the first
-                // loop but we will give the benefit of the doubt in case a code is issued via SQL.
-                //
-                for ( int attempts = 0; attempts < 1000; attempts++ )
-                {
-                    if ( availableResponseCodes == null || !availableResponseCodes.Any() )
-                    {
-                        availableResponseCodes = GenerateAvailableResponseCodeList( rockContext );
-                    }
-
-                    var code = availableResponseCodes[0];
-                    availableResponseCodes.RemoveAt( 0 );
-
-                    //
-                    // Verify that the code is still unused.
-                    //
-                    var isUsed = communicationRecipientService.Queryable()
-                            .Where( c => c.ResponseCode == code && c.CreatedDateTime > tokenStartDate )
-                            .Any();
-
-                    if ( !isUsed )
-                    {
-                        RockCache.AddOrUpdate( RESPONSE_CODE_CACHE_KEY, availableResponseCodes );
-                        return code;
-                    }
-                }
-            }
-
-            throw new Exception( "Could not find an available response code." );
+            return CommunicationRecipientResponseCode.GetNewResponseCode()?.ResponseCode;
         }
 
         /// <summary>

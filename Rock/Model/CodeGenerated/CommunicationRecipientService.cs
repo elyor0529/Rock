@@ -90,13 +90,16 @@ namespace Rock.Model
             target.Id = source.Id;
             target.AdditionalMergeValuesJson = source.AdditionalMergeValuesJson;
             target.CommunicationId = source.CommunicationId;
+            target.CommunicationRecipientResponseCodeId = source.CommunicationRecipientResponseCodeId;
             target.ForeignGuid = source.ForeignGuid;
             target.ForeignKey = source.ForeignKey;
             target.MediumEntityTypeId = source.MediumEntityTypeId;
             target.OpenedClient = source.OpenedClient;
             target.OpenedDateTime = source.OpenedDateTime;
             target.PersonAliasId = source.PersonAliasId;
+            #pragma warning disable 612, 618
             target.ResponseCode = source.ResponseCode;
+            #pragma warning restore 612, 618
             target.SendDateTime = source.SendDateTime;
             target.SentMessage = source.SentMessage;
             target.Status = source.Status;

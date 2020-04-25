@@ -10,7 +10,7 @@ SET NOCOUNT ON
 DECLARE @recipientPersonAliasId INT
 	,@senderPersonAliasId INT
 	,@communicationCounter INT = 0
-	,@maxCommunicationCount INT = 25000
+	,@maxCommunicationCount INT = 250000
 
     -- it does a batch communications around 5% of the time, and then a random number of recipients (up to 500) for each batch communication
     ,@maxCommunicationRecipientBatchCount INT = 500
@@ -166,6 +166,27 @@ BEGIN
 			)
 
 		SET @communicationId = SCOPE_IDENTITY()
+        declare @smsResponseCode nvarchar(6) = null;
+        
+        if @mediumEntityTypeName like '%.Sms' begin
+            DECLARE 
+	            @requestDateTime datetime = GETDATE(),
+	            @tokenReuseDurationDays int = 30
+
+            select @smsResponseCode  = (SELECT TOP 1 ResponseCode
+		            FROM (
+                        SELECT TOP (1000) [ResponseCode]
+			            FROM [CommunicationRecipientResponseCode]
+			            WHERE [LastUsedDateTime] IS NULL OR [LastUsedDateTime] < DATEADD(DAY, -30, @communicationDateTime )
+			            ) x
+		            ORDER BY NEWID())
+
+            UPDATE [CommunicationRecipientResponseCode] with (updlock)
+            SET [LastUsedDateTime] = @communicationDateTime
+            WHERE ResponseCode = @smsResponseCode
+        end
+        
+
 
 		IF (@isbulk = 0)
 		BEGIN
@@ -184,7 +205,8 @@ BEGIN
 				,[ForeignId]
 				,[TransportEntityTypeName]
 				,[UniqueMessageId]
-				,[ResponseCode]
+				,[ResponseCode] -- obsolete as of v11
+                ,[CommunicationRecipientResponseCodeId]
 				,[PersonAliasId]
                 ,[MediumEntityTypeId]
                 ,[SentMessage]
@@ -203,8 +225,9 @@ BEGIN
 				,NULL --OpenedClient
 				,NULL -- ForeignId
 				,@transportEntityTypeName
-				,NULL
-				,ABS(CHECKSUM(NewId())) % 99999 -- ResponseCode
+                , null --[UniqueMessageId]
+				 ,@smsResponseCode -- [ResponseCode] obsolete
+				, null -- [CommunicationRecipientResponseCodeId]
 				,@recipientPersonAliasId
                 ,@mediumEntityTypeId
                 ,CONCAT(newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid()) -- [SentMessage]
@@ -231,6 +254,7 @@ BEGIN
 				,[TransportEntityTypeName]
 				,[UniqueMessageId]
 				,[ResponseCode]
+                ,[CommunicationRecipientResponseCodeId]
 				,[PersonAliasId]
                 ,[MediumEntityTypeId]
                 ,[SentMessage]
@@ -249,7 +273,8 @@ BEGIN
 				,NULL
 				, @transportEntityTypeName
 				,NULL
-				,ABS(CHECKSUM(NewId())) % 99999 -- ResponseCode
+				, null --[ResponseCode] -- obsolete as of v11
+                , null -- [CommunicationRecipientResponseCodeId]
 				,Id
                 ,@mediumEntityTypeId
                 ,CONCAT(newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid(), newid())
@@ -260,44 +285,42 @@ BEGIN
         
         if @mediumEntityTypeName like '%.Sms' begin
 			select top 1 @messageKey = FullNumber
-			FROM PhoneNumber tablesample(10 percent)
-			WHERE IsMessagingEnabled = 1
-        end
-        else begin
-            set @messageKey =  ''
+			FROM PhoneNumber
+			WHERE FullNumber is not null
+
+            INSERT INTO [dbo].[CommunicationResponse] (
+			    [MessageKey]
+			    ,[FromPersonAliasId]
+			    ,[ToPersonAliasId]
+			    ,[IsRead]
+			    ,[RelatedSmsFromDefinedValueId]
+			    ,[RelatedTransportEntityTypeId]
+			    ,[RelatedMediumEntityTypeId]
+			    ,[Response]
+			    ,[CreatedDateTime]
+			    ,[Guid]
+			)
+		    VALUES (
+			    @messageKey
+			    ,null -- @recipientPersonAliasId
+			    ,@senderPersonAliasId
+			    ,0
+			    ,@relatedSmsFromDefinedValueId
+			    ,@transportEntityTypeId
+			    ,@mediumEntityTypeId
+			    ,CONCAT (
+				    'Some Message'
+				    ,rand()
+				    )
+			    ,DATEADD(DAY, - round(50 * rand(), 0), getdate())
+			    ,NEWID()
+			    )
         end
 
-		INSERT INTO [dbo].[CommunicationResponse] (
-			[MessageKey]
-			,[FromPersonAliasId]
-			,[ToPersonAliasId]
-			,[IsRead]
-			,[RelatedSmsFromDefinedValueId]
-			,[RelatedTransportEntityTypeId]
-			,[RelatedMediumEntityTypeId]
-			,[Response]
-			,[CreatedDateTime]
-			,[Guid]
-			)
-		VALUES (
-			@messageKey
-			,null -- @recipientPersonAliasId
-			,@senderPersonAliasId
-			,0
-			,@relatedSmsFromDefinedValueId
-			,@transportEntityTypeId
-			,@mediumEntityTypeId
-			,CONCAT (
-				'Some Message'
-				,rand()
-				)
-			,DATEADD(DAY, - round(50 * rand(), 0), getdate())
-			,NEWID()
-			)
-
-        if (@communicationCounter % 50 = 0)
+        if (@communicationCounter % 100 = 0)
 		begin
-  		  print @communicationCounter  
+  		  print @communicationCounter 
+          print @communicationDateTime
         end
 
         SET @communicationCounter += 1;

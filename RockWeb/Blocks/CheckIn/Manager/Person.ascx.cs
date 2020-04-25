@@ -346,7 +346,6 @@ namespace RockWeb.Blocks.CheckIn.Manager
                 person.PrimaryAliasId,
                 message,
                 smsFromNumber,
-                null,
                 rockContext );
 
             DisplayResult( NotificationBoxType.Success, "Message queued." );

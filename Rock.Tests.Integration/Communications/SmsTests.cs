@@ -14,7 +14,9 @@
 // limitations under the License.
 // </copyright>
 //
+using System.Collections.Concurrent;
 using System.Linq;
+using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Rock.Communication.SmsActions;
 using Rock.Data;
@@ -143,6 +145,39 @@ namespace Rock.Tests.Integration.Communications.Sms
 
             Assert.That.IsFalse( this.PersonQueryContainsNamelessPersonRecordType( defaultQuery ),
                             "Base Person Queryable incorrectly includes a Person record with Record Type of \"Nameless Person\"." );
+        }
+
+        /// <summary>
+        /// Communications the recipient response code thread safe no duplicates.
+        /// </summary>
+        [TestMethod]
+        [TestProperty( "Feature", TestFeatures.Communications )]
+        public void CommunicationRecipientResponseCode_ThreadSafe_NoDuplicates()
+        {
+            ConcurrentDictionary<int, bool> newResponseCodeIds = new ConcurrentDictionary<int, bool>();
+
+            var fails = 0;
+            var succeeds = 0;
+            var counter = 0;
+
+            var rockContext = new RockContext();
+            
+            Parallel.For( 1, 80000, new ParallelOptions { MaxDegreeOfParallelism = -1 }, ( a ) =>
+            {
+                var newResponseCodeId = Rock.Model.CommunicationRecipientResponseCode.GetNewResponseCode().ResponseCodeId;
+                if ( !newResponseCodeIds.TryAdd( newResponseCodeId, true ) )
+                {
+                    fails++;
+                }
+                else
+                {
+                    succeeds++;
+                }
+                counter++;
+            } );
+
+            Assert.That.IsTrue( fails == 0,
+                           "Duplicate ResponseCodeIds where generated" );
         }
 
         #region Support functions

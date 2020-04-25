@@ -41,6 +41,9 @@ namespace Rock.Client
         public int CommunicationId { get; set; }
 
         /// <summary />
+        public int? CommunicationRecipientResponseCodeId { get; set; }
+
+        /// <summary />
         public Guid? ForeignGuid { get; set; }
 
         /// <summary />
@@ -64,6 +67,7 @@ namespace Rock.Client
         public int PersonAliasId { get; set; }
 
         /// <summary />
+        [Obsolete( "Use CommunicationRecipientResponseCodeId instead", false )]
         public string ResponseCode { get; set; }
 
         /// <summary />
@@ -119,6 +123,7 @@ namespace Rock.Client
             this.Id = source.Id;
             this.AdditionalMergeValuesJson = source.AdditionalMergeValuesJson;
             this.CommunicationId = source.CommunicationId;
+            this.CommunicationRecipientResponseCodeId = source.CommunicationRecipientResponseCodeId;
             this.ForeignGuid = source.ForeignGuid;
             this.ForeignKey = source.ForeignKey;
             this.MediumEntityTypeId = source.MediumEntityTypeId;
@@ -126,7 +131,9 @@ namespace Rock.Client
             this.OpenedClient = source.OpenedClient;
             this.OpenedDateTime = source.OpenedDateTime;
             this.PersonAliasId = source.PersonAliasId;
+            #pragma warning disable 612, 618
             this.ResponseCode = source.ResponseCode;
+            #pragma warning restore 612, 618
             this.SendDateTime = source.SendDateTime;
             this.SentMessage = source.SentMessage;
             this.Status = source.Status;
@@ -150,6 +157,9 @@ namespace Rock.Client
     {
         /// <summary />
         public Dictionary<string, Object> AdditionalMergeValues { get; set; }
+
+        /// <summary />
+        public CommunicationRecipientResponseCode CommunicationRecipientResponseCode { get; set; }
 
         /// <summary />
         public EntityType MediumEntityType { get; set; }
