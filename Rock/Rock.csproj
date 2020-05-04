@@ -990,7 +990,7 @@
     <Compile Include="Communication\RockMessage.cs" />
     <Compile Include="Communication\RockPushMessage.cs" />
     <Compile Include="Communication\RockSMSMessage.cs" />
-    <Compile Include="Communication\SMTPComponent.cs" />
+    <Compile Include="Communication\Transport\SMTPComponent.cs" />
     <Compile Include="Communication\TransportComponent.cs" />
     <Compile Include="Communication\TransportContainer.cs" />
     <Compile Include="Communication\Transport\Firebase.cs" />
