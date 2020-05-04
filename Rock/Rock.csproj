@@ -234,6 +234,9 @@
     <Reference Include="Rock.Common.Mobile, Version=0.3.8.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>..\packages\Rock.Common.Mobile.0.3.8\lib\net452\Rock.Common.Mobile.dll</HintPath>
     </Reference>
+    <Reference Include="SendGrid, Version=9.14.1.0, Culture=neutral, PublicKeyToken=4f047e93159395ca, processorArchitecture=MSIL">
+      <HintPath>..\packages\SendGrid.9.14.1\lib\net452\SendGrid.dll</HintPath>
+    </Reference>
     <Reference Include="Serilog, Version=2.0.0.0, Culture=neutral, PublicKeyToken=24c2f752a8e58a10, processorArchitecture=MSIL">
       <HintPath>..\packages\Serilog.2.8.0\lib\net45\Serilog.dll</HintPath>
     </Reference>
@@ -481,6 +484,8 @@
     <Compile Include="Blocks\Types\Mobile\Prayer\PrayerRequestDetails.cs" />
     <Compile Include="Blocks\Types\Mobile\Prayer\PrayerSession.cs" />
     <Compile Include="Blocks\Types\Mobile\Prayer\PrayerSessionSetup.cs" />
+    <Compile Include="Communication\Transport\MailTransportHelper.cs" />
+    <Compile Include="Communication\Transport\SendGridSmtp.cs" />
     <Compile Include="Communication\CommunicationTemplateHelper.cs" />
     <Compile Include="Field\Types\ConnectionRequestActivityFieldType.cs" />
     <Compile Include="Field\Types\StepFieldType.cs" />
