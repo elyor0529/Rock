@@ -149,7 +149,8 @@ namespace Rock.Communication.Transport
                     }
 
                     // From
-                    restRequest.AddParameter( "from", new MailAddress( fromAddress, fromName).ToString() );
+                    var fromEmailAddress = new MailAddress( fromAddress, fromName );
+                    restRequest.AddParameter( "from", fromEmailAddress.ToString() );
 
                     // To
                     restRequest.AddParameter(
@@ -159,7 +160,7 @@ namespace Rock.Communication.Transport
                         rockMessageRecipient.Name.ResolveMergeFields( rockMessageRecipient.MergeFields, emailMessage.CurrentPerson, emailMessage.EnabledLavaCommands ) ) );
 
                     // Safe Sender checks
-                    CheckSafeSender( restRequest, fromAddress, globalAttributes.GetValue( "OrganizationEmail" ) );
+                    HandleUnsafeSender( restRequest, fromEmailAddress, globalAttributes.GetValue( "OrganizationEmail" ) );
 
                     // CC
                     foreach ( string cc in emailMessage.CCEmails.Where( e => e != string.Empty ) )
@@ -343,13 +344,14 @@ namespace Rock.Communication.Transport
                         }
 
                         // From
-                        restRequest.AddParameter( "from", new MailAddress( fromAddress, fromName ).ToString() );
+                        var fromEmailAddress = new MailAddress( fromAddress, fromName );
+                        restRequest.AddParameter( "from", fromEmailAddress.ToString() );
 
                         // To
                         restRequest.AddParameter( "to",  new MailAddress( recipient.PersonAlias.Person.Email, recipient.PersonAlias.Person.FullName ).ToString() );
 
                         // Safe sender checks
-                        CheckSafeSender( restRequest, fromAddress, globalAttributes.GetValue( "OrganizationEmail" ) );
+                        HandleUnsafeSender( restRequest, fromEmailAddress, globalAttributes.GetValue( "OrganizationEmail" ) );
 
                         // CC
                         if ( communication.CCEmails.IsNotNullOrWhiteSpace() )
@@ -527,66 +529,30 @@ namespace Rock.Communication.Transport
             return valid;
         }
 
-        private void CheckSafeSender( RestRequest restRequest, string fromEmail, string organizationEmail )
+        private void HandleUnsafeSender( RestRequest restRequest, MailAddress fromEmail, string organizationEmail )
         {
             List<string> toEmailAddresses = restRequest.Parameters.Where( p => p.Name == "to" ).Select( p => p.Value.ToString() ).ToList();
+            var checkResult = MailTransportHelper.CheckSafeSender( toEmailAddresses, fromEmail, organizationEmail );
 
-            // Get the safe sender domains
-            var safeDomainValues = DefinedTypeCache.Get( SystemGuid.DefinedType.COMMUNICATION_SAFE_SENDER_DOMAINS.AsGuid() ).DefinedValues;
-            var safeDomains = safeDomainValues.Select( v => v.Value ).ToList();
-
-            // Check to make sure the From email domain is a safe sender, if so then add the sender header.
-            var fromParts = fromEmail.Split( new char[] { '@' }, StringSplitOptions.RemoveEmptyEntries );
-            if ( fromParts.Length == 2 && safeDomains.Contains( fromParts[1], StringComparer.OrdinalIgnoreCase ) )
+            if ( checkResult.IsUnsafeDomain )
             {
-                Parameter fromParam = restRequest.Parameters.Where( p => p.Name == "from" ).FirstOrDefault();
-                restRequest.AddParameter( "h:Sender", fromParam.Value );
-                return;
-            }
-
-            if ( GetAttributeValue( "ReplaceUnsafeSender" ).AsBoolean( true ) )
-            {
-
-                // The sender domain is not considered safe so check all the recipients to see if they have a domain that does not requrie a safe sender
-                bool unsafeToDomain = false;
-
-                foreach ( var toEmailAddress in toEmailAddresses )
+                if ( !string.IsNullOrWhiteSpace( checkResult.SafeFromAddress.Address ) )
                 {
-                    bool safe = false;
-                    var toParts = toEmailAddress.Split( new char[] { '@' }, StringSplitOptions.RemoveEmptyEntries );
-                    if ( toParts.Length == 2 && safeDomains.Contains( toParts[1], StringComparer.OrdinalIgnoreCase ) )
+                    // update the from param to the safe email address
+                    Parameter fromParam = restRequest.Parameters.Where( p => p.Name == "from" ).FirstOrDefault();
+                    if ( fromParam != null )
                     {
-                        var domain = safeDomainValues.FirstOrDefault( dv => dv.Value.Equals( toParts[1], StringComparison.OrdinalIgnoreCase ) );
-                        safe = domain != null && domain.GetAttributeValue( "SafeToSendTo" ).AsBoolean();
+                        restRequest.Parameters.Remove( fromParam );
                     }
 
-                    if ( !safe )
+                    restRequest.AddParameter( "from", checkResult.SafeFromAddress.Address );
+
+                    Parameter replyParam = restRequest.Parameters.Where( p => p.Name == "h:Reply-To" && p.Value.ToString() == checkResult.SafeFromAddress.Address ).FirstOrDefault();
+
+                    // Check the list of reply to address and add the org one if needed
+                    if ( replyParam == null )
                     {
-                        unsafeToDomain = true;
-                        break;
-                    }
-                }
-
-                if ( unsafeToDomain )
-                {
-                    if ( !string.IsNullOrWhiteSpace( organizationEmail ) && !organizationEmail.Equals( fromEmail, StringComparison.OrdinalIgnoreCase ) )
-                    {
-                        // update the from param to the organizationemail
-                        Parameter fromParam = restRequest.Parameters.Where( p => p.Name == "from" ).FirstOrDefault();
-                        if ( fromParam != null )
-                        {
-                            restRequest.Parameters.Remove( fromParam );
-                        }
-
-                        restRequest.AddParameter( "from", organizationEmail );
-
-                        Parameter replyParam = restRequest.Parameters.Where( p => p.Name == "h:Reply-To" && p.Value.ToString() == organizationEmail ).FirstOrDefault();
-
-                        // Check the list of reply to address and add the org one if needed
-                        if ( replyParam == null )
-                        {
-                            restRequest.AddParameter( "h:Reply-To", organizationEmail );
-                        }
+                        restRequest.AddParameter( "h:Reply-To", checkResult.SafeFromAddress.Address );
                     }
                 }
             }

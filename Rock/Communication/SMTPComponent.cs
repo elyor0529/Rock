@@ -184,11 +184,11 @@ namespace Rock.Communication.Transport
 
                 using ( var smtpClient = GetSmtpClient() )
                 {
-                    foreach( var messageRecipient in rockMessage.GetRecipients() )
+                    foreach ( var messageRecipient in rockMessage.GetRecipients() )
                     {
                         try
                         {
-                            foreach( var mergeField in mergeFields )
+                            foreach ( var mergeField in mergeFields )
                             {
                                 messageRecipient.MergeFields.AddOrIgnore( mergeField.Key, mergeField.Value );
                             }
@@ -203,7 +203,9 @@ namespace Rock.Communication.Transport
                             message.To.Add( new MailAddress(
                                 messageRecipient.To.ResolveMergeFields( messageRecipient.MergeFields, emailMessage.CurrentPerson, emailMessage.EnabledLavaCommands ),
                                 messageRecipient.Name.ResolveMergeFields( messageRecipient.MergeFields, emailMessage.CurrentPerson, emailMessage.EnabledLavaCommands ) ) );
-                            CheckSafeSender( message, globalAttributes );
+
+
+                            HandleUnsafeSender( message, globalAttributes );
 
                             // cc
                             foreach ( string cc in emailMessage.CCEmails.Where( e => e != "" ) )
@@ -280,7 +282,7 @@ namespace Rock.Communication.Transport
                                 RockQueue.TransactionQueue.Enqueue( transaction );
                             }
                         }
-                        catch (Exception ex)
+                        catch ( Exception ex )
                         {
                             errorMessages.Add( ex.Message );
                             ExceptionLogService.LogException( ex );
@@ -312,7 +314,7 @@ namespace Rock.Communication.Transport
                 bool hasPendingRecipients;
                 if ( communication != null &&
                     communication.Status == Model.CommunicationStatus.Approved &&
-                    ( !communication.FutureSendDateTime.HasValue || communication.FutureSendDateTime.Value.CompareTo( RockDateTime.Now ) <= 0 ))
+                    ( !communication.FutureSendDateTime.HasValue || communication.FutureSendDateTime.Value.CompareTo( RockDateTime.Now ) <= 0 ) )
                 {
                     var qryRecipients = new CommunicationRecipientService( communicationRockContext ).Queryable();
 
@@ -402,7 +404,7 @@ namespace Rock.Communication.Transport
                                     // Set From/To and check safe sender
                                     message.From = new MailAddress( fromAddress, fromName );
                                     message.To.Add( new MailAddress( recipient.PersonAlias.Person.Email, recipient.PersonAlias.Person.FullName ) );
-                                    CheckSafeSender( message, globalAttributes );
+                                    HandleUnsafeSender( message, globalAttributes );
 
                                     // Create merge field dictionary
                                     var mergeObjects = recipient.CommunicationMergeValues( mergeFields );
@@ -634,63 +636,24 @@ namespace Rock.Communication.Transport
         /// </summary>
         /// <param name="message">The message.</param>
         /// <param name="globalAttributes">The global attributes.</param>
-        private void CheckSafeSender( MailMessage message, GlobalAttributesCache globalAttributes )
+        private void HandleUnsafeSender( MailMessage message, GlobalAttributesCache globalAttributes )
         {
             if ( message != null && message.From != null )
             {
-                string from = message.From.Address;
-                string fromName = message.From.DisplayName;
+                var orgEmail = globalAttributes.GetValue( "OrganizationEmail" );
+                var checkResult = MailTransportHelper.CheckSafeSender( message.To.Select( t => t.Address ).ToList(), message.From, orgEmail );
 
-                // Get the safe sender domains
-                var safeDomainValues = DefinedTypeCache.Get( SystemGuid.DefinedType.COMMUNICATION_SAFE_SENDER_DOMAINS.AsGuid() ).DefinedValues;
-                var safeDomains = safeDomainValues.Select( v => v.Value ).ToList();
-
-                // Check to make sure the From email domain is a safe sender
-                var fromParts = from.Split( new char[] { '@' }, StringSplitOptions.RemoveEmptyEntries );
-                if ( fromParts.Length != 2 || !safeDomains.Contains( fromParts[1], StringComparer.OrdinalIgnoreCase ) )
+                if ( checkResult.IsUnsafeDomain )
                 {
-                    // The sending email address is not a safe sender domain, but check to see if all the recipients have a domain
-                    // that does not require a safe sender domain
-                    bool unsafeToDomain = false;
-                    foreach ( var to in message.To )
-                    {
-                        bool safe = false;
-                        var toParts = to.Address.Split( new char[] { '@' }, StringSplitOptions.RemoveEmptyEntries );
-                        if ( toParts.Length == 2 && safeDomains.Contains( toParts[1], StringComparer.OrdinalIgnoreCase ) )
-                        {
-                            var domain = safeDomainValues.FirstOrDefault( dv => dv.Value.Equals( toParts[1], StringComparison.OrdinalIgnoreCase ) );
-                            safe = domain != null && domain.GetAttributeValue( "SafeToSendTo" ).AsBoolean();
-                        }
+                    message.From = checkResult.SafeFromAddress;
 
-                        if ( !safe )
-                        {
-                            unsafeToDomain = true;
-                            break;
-                        }
+                    bool addReplyTo = !message.ReplyToList.Any(m => m.Address.Equals( checkResult.SafeFromAddress.Address, StringComparison.OrdinalIgnoreCase ));
+
+                    if ( addReplyTo )
+                    {
+                        message.ReplyToList.Add( new MailAddress( checkResult.SafeFromAddress.Address, checkResult.SafeFromAddress.DisplayName ) );
                     }
-
-                    if ( unsafeToDomain )
-                    {
-                        string orgEmail = globalAttributes.GetValue( "OrganizationEmail" );
-                        if ( !string.IsNullOrWhiteSpace( orgEmail ) && !orgEmail.Equals( from, StringComparison.OrdinalIgnoreCase ) )
-                        {
-                            message.From = new MailAddress( orgEmail, fromName );
-
-                            bool addReplyTo = true;
-                            foreach ( var replyTo in message.ReplyToList )
-                            {
-                                if ( replyTo.Address.Equals( from, StringComparison.OrdinalIgnoreCase ) )
-                                {
-                                    addReplyTo = false;
-                                    break;
-                                }
-                            }
-
-                            if ( addReplyTo )
-                            {
-                                message.ReplyToList.Add( new MailAddress( from, fromName ) );
-                            }
-                        }
+                }
                     }
                 }
             }
