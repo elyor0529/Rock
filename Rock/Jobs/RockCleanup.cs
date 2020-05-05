@@ -116,11 +116,12 @@ namespace Rock.Jobs
 
             */
 
-            RunCleanupTask( "Purge Exception Log", () => this.PurgeExceptionLog( dataMap ) );
+            RunCleanupTask( "Exception Log cleanup", () => this.PurgeExceptionLog( dataMap ) );
 
-            RunCleanupTask( "Expired Entity Set", () => CleanupExpiredEntitySets( dataMap ) );
+            RunCleanupTask( "Expired Entity Set cleanup", () => CleanupExpiredEntitySets( dataMap ) );
 
-            //RunCleanupTask( "Update median page load times", () => UpdateMedianPageLoadTimes() );
+            //RunCleanupTask( "Update Median Page Load times", () => UpdateMedianPageLoadTimes() );
+            RunCleanupTask( "Update Median Page Load times", () => UpdateMedianPageLoadTimes() ); 
 
             RunCleanupTask( "Old Interaction Cleanup", () => CleanupOldInteractions( dataMap ) );
 
@@ -128,7 +129,7 @@ namespace Rock.Jobs
 
             RunCleanupTask( "Clean Cached File Directory", () => CleanCachedFileDirectory( context, dataMap ) );
 
-            RunCleanupTask( "Cleanup Temporary Binary Files", () => CleanupTemporaryBinaryFiles() );
+            RunCleanupTask( "Temporary Binary Files Cleanup", () => CleanupTemporaryBinaryFiles() );
 
             // updates missing person aliases, metaphones, etc (doesn't delete any records)
             RunCleanupTask( "Person Cleanup", () => PersonCleanup( dataMap ) );
@@ -156,7 +157,7 @@ namespace Rock.Jobs
             // Search for and delete group memberships duplicates (same person, group, and role)
             RunCleanupTask( "Group Membership Cleanup", () => GroupMembershipCleanup() );
 
-            RunCleanupTask( "Attendance Data (old label data) Cleanup", () => AttendanceDataCleanup( dataMap ) );
+            RunCleanupTask( "Attendance Label Data Cleanup", () => AttendanceDataCleanup( dataMap ) );
 
             // Search for locations with no country and assign USA or Canada if it match any of the country's states
             RunCleanupTask( "Location Cleanup", () => LocationCleanup( dataMap ) );
@@ -190,7 +191,7 @@ namespace Rock.Jobs
             {
                 if ( rockCleanupJobResultList.Any( a => a.HasException ) )
                 {
-                    jobSummaryBuilder.AppendLine( "\n<span class='label label-warning'>Warning</span> Some jobs have errors. See exception log for details." );
+                    jobSummaryBuilder.AppendLine( "\n<i class='fa fa-circle text-warning'></i> Some jobs have errors. See exception log for details." );
                 }
 
                 context.Result = jobSummaryBuilder.ToString();
@@ -218,32 +219,11 @@ namespace Rock.Jobs
         {
             if ( rockCleanupJobResult.HasException )
             {
-                return $"<span class='label label-danger'>Error</span> { rockCleanupJobResult.Title}";
+                return $"<i class='fa fa-circle text-danger'></i> { rockCleanupJobResult.Title}";
             }
             else
             {
-                string completionResultString;
-                if ( rockCleanupJobResult.RowsAffected > 0 )
-                {
-                    completionResultString = string.Format( "processed {0:n0} rows", rockCleanupJobResult.RowsAffected );
-                }
-                else
-                {
-                    completionResultString = string.Empty;
-                }
-
-                var titleString = rockCleanupJobResult.Title;
-                string elapsedTimeString = string.Empty;
-                if ( rockCleanupJobResult.Elapsed.TotalMinutes > 1 )
-                {
-                    elapsedTimeString = $"[{Math.Round( rockCleanupJobResult.Elapsed.TotalMinutes, 1 )} minutes]";
-                }
-                else if ( rockCleanupJobResult.Elapsed.TotalSeconds > 1 )
-                {
-                    elapsedTimeString = $"[{Math.Round( rockCleanupJobResult.Elapsed.TotalSeconds, 1 )} seconds]";
-                }
-
-                return $"<span class='label label-success'>Success</span> {titleString} {completionResultString} {elapsedTimeString}";
+                return $"<i class='fa fa-circle text-success'></i> {rockCleanupJobResult.Title}";
             }
         }
 
@@ -1726,6 +1706,8 @@ where ISNULL(ValueAsNumeric, 0) != ISNULL((case WHEN LEN([value]) < (100)
         /// </summary>
         private int UpdateMedianPageLoadTimes()
         {
+            throw new Exception( "KABOOM!" );
+
             var rockContext = new RockContext();
             rockContext.Database.CommandTimeout = commandTimeout;
 
