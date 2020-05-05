@@ -57,62 +57,10 @@ namespace Rock
                 return string.Empty;
             }
 
-            return str.Replace( Environment.NewLine, "<br/>" ).Replace( "\x0A", "<br/>" );
-        }
+            // normalize line breaks so this works with either CRLF or LF lind endings
+            var result = str.Replace( "\r\n", "\n" );
 
-        /// <summary>
-        /// Truncates the HTML but only keeping the last full line (based on LineEndings or &lt;br&gt;).
-        /// The maxLength doesn't include the &lt;br&gt; tags
-        /// Note that this function could result in broken html if is more complicated than just &lt;/br&gt; tags
-        /// </summary>
-        /// <param name="str">The string.</param>
-        /// <param name="maxLength">The maximum length (not including &lt;br&gt;) </param>
-        /// <param name="addEllipsis">if set to <c>true</c> [add ellipsis].</param>
-        /// <returns></returns>
-        public static string TruncateHtmlOnCrOrBr( this string str, int maxLength, bool addEllipsis )
-        {
-            if ( str == null )
-            {
-                return null;
-            }
-
-            // if the str (without br) doesn't need truncating, then we can just return the original string
-            if ( str.Replace( "<br/>", string.Empty ).Replace( "<br>", string.Empty ).Length <= maxLength )
-            {
-                return str;
-            }
-
-            // If adding an ellipsis then reduce the maxlength by three to allow for the additional characters
-            maxLength = addEllipsis ? maxLength - 3 : maxLength;
-
-            /* 2020-05-04 MDP
-             * To help prevent broken html, we only want to grab the last full line that doesn't put us over the limit.
-             * But if the HTML is more complicated then a list of lines, this could result in broken hmtl
-             */
-
-            // normalize the str so that all the lines are converted to <br>, then split it based on <br>
-            var lines = str.ConvertCrLfToHtmlBr().Split( new string[] { "<br/>", "<br>" }, StringSplitOptions.None );
-
-            List<string> truncatedLines = new List<string>();
-
-            // include lines until the next line would put us over the limit
-            int stringLength = 0;
-
-            foreach ( var line in lines )
-            {
-                stringLength = stringLength + line.Length;
-                if ( stringLength >= maxLength )
-                {
-                    // if this line puts us over the limit, stop including lines
-                    break;
-                }
-
-                truncatedLines.Add( line );
-            }
-
-            var truncatedString = truncatedLines.AsDelimited( "<br>" );
-
-            return addEllipsis ? truncatedString + "..." : truncatedString;
+            return result.Replace( "\n", "<br>" );
         }
 
         /// <summary>
@@ -274,8 +222,8 @@ namespace Rock
             // pass through the Sanitizer.
             str = str.Replace( Environment.NewLine, "\u00A7" ).Replace( "\x0A", "\u00A7" );
 
-            // Now we pass it to sanitizer and then convert those section-symbols to <br/>
-            return str.SanitizeHtml().Replace( "\u00A7", "<br/>" );
+            // Now we pass it to sanitizer and then convert those section-symbols to <br>
+            return str.SanitizeHtml().Replace( "\u00A7", "<br>" );
         }
 
         /// <summary>
@@ -292,11 +240,11 @@ namespace Rock
 
             // Note: \u00A7 is the section symbol, \u00A6 is the broken bar symbol
             // First convert HTML breaks to a character that can pass through the Sanitizer.
-            str = str.Replace( "<br/>", "\u00A7" ).Replace( "<br />", "\u00A7" );
+            str = str.Replace( "<br/>", "\u00A7" ).Replace( "<br />", "\u00A7" ).Replace( "<br>", "\u00A7" );
             str = str.Replace( "</p>", "\u00A6" );
 
             // Now sanitize and convert the symbols to breaks
-            str = str.SanitizeHtml().Replace( "\u00A7", "<br/>" ).Replace( "\u00A6", "<br/><br/>" ).Replace( "\r\n", "<br/>" );
+            str = str.SanitizeHtml().Replace( "\u00A7", "<br>" ).Replace( "\u00A6", "<br><br>" ).Replace( "\r\n", "<br>" );
             return str;
         }
 
