@@ -35,7 +35,7 @@ namespace Rock.Communication.Transport
                 return false;
             }
 
-            var mergeFields = GetAllMergeFields( rockMessage );
+            var mergeFields = GetAllMergeFields( rockMessage.CurrentPerson, rockMessage.AdditionalMergeFields );
             var globalAttributes = GlobalAttributesCache.Get();
             var fromAddress = GetFromAddress( emailMessage, mergeFields, globalAttributes );
 
@@ -48,18 +48,14 @@ namespace Rock.Communication.Transport
             var templateMailMessage = GetMailMessage( emailMessage, mergeFields, globalAttributes );
             var organizationEmail = globalAttributes.GetValue( "OrganizationEmail" );
 
-            var client = new SendGridClient( GetAttributeValue( "APIKey" ) );
-
             foreach ( var rockMessageRecipient in rockMessage.GetRecipients() )
             {
                 try
                 {
                     var recipientEmailMessage = GetRecipientRockEmailMessage( templateMailMessage, rockMessageRecipient, mergeFields, organizationEmail );
-                    var sendGridMessage = GetSendGridMessageFromRockEmailMessage( recipientEmailMessage );
 
-                    // Send it
-                    var response = client.SendEmailAsync( sendGridMessage );
-
+                    var result = SendEmail( recipientEmailMessage );
+                    
                     // Create the communication record
                     if ( recipientEmailMessage.CreateCommunicationRecord )
                     {
@@ -78,12 +74,6 @@ namespace Rock.Communication.Transport
             return !errorMessages.Any();
         }
 
-        /// <summary>
-        /// Sends the specified communication.
-        /// </summary>
-        /// <param name="communication">The communication.</param>
-        /// <param name="mediumEntityTypeId">The medium entity type identifier.</param>
-        /// <param name="mediumAttributes">The medium attributes.</param>
         public override void Send( Model.Communication communication, int mediumEntityTypeId, Dictionary<string, string> mediumAttributes )
         {
             using ( var communicationRockContext = new RockContext() )
@@ -121,7 +111,8 @@ namespace Rock.Communication.Transport
                 }
 
                 var currentPerson = communication.CreatedByPersonAlias?.Person;
-                var mergeFields = Lava.LavaHelper.GetCommonMergeFields( null, currentPerson );
+                var mergeFields = GetAllMergeFields(currentPerson, communication.AdditionalLavaFields);
+                
                 var globalAttributes = GlobalAttributesCache.Get();
 
                 var templateEmailMessage = GetMailMessage( communication, mergeFields, globalAttributes );
@@ -201,7 +192,7 @@ namespace Rock.Communication.Transport
             }
         }
 
-        public RockEmailMessage GetMailMessage( RockMessage rockMessage, Dictionary<string, object> mergeFields, GlobalAttributesCache globalAttributes )
+        private RockEmailMessage GetMailMessage( RockMessage rockMessage, Dictionary<string, object> mergeFields, GlobalAttributesCache globalAttributes )
         {
             var resultEmailMessage = new RockEmailMessage();
 
@@ -241,7 +232,7 @@ namespace Rock.Communication.Transport
             return resultEmailMessage;
         }
 
-        public RockEmailMessage GetMailMessage( Model.Communication communication, Dictionary<string, object> mergeFields, GlobalAttributesCache globalAttributes )
+        private RockEmailMessage GetMailMessage( Model.Communication communication, Dictionary<string, object> mergeFields, GlobalAttributesCache globalAttributes )
         {
             var resultEmailMessage = new RockEmailMessage();
 
@@ -281,7 +272,7 @@ namespace Rock.Communication.Transport
             return resultEmailMessage;
         }
 
-        public RockEmailMessage GetRecipientRockEmailMessage( RockEmailMessage emailMessage, RockMessageRecipient rockMessageRecipient, Dictionary<string, object> mergeFields, string organizationEmail )
+        private RockEmailMessage GetRecipientRockEmailMessage( RockEmailMessage emailMessage, RockMessageRecipient rockMessageRecipient, Dictionary<string, object> mergeFields, string organizationEmail )
         {
             var recipientEmail = new RockEmailMessage();
             recipientEmail.CurrentPerson = emailMessage.CurrentPerson;
@@ -363,12 +354,7 @@ namespace Rock.Communication.Transport
             return recipientEmail;
         }
 
-        public RockEmailMessage GetRecipientRockEmailMessage( RockEmailMessage emailMessage
-            , Model.Communication communication
-            , CommunicationRecipient communicationRecipient
-            , Dictionary<string, object> mergeFields
-            , string organizationEmail
-            , Dictionary<string, string> mediumAttributes )
+        public RockEmailMessage GetRecipientRockEmailMessage( RockEmailMessage emailMessage, Model.Communication communication, CommunicationRecipient communicationRecipient, Dictionary<string, object> mergeFields, string organizationEmail, Dictionary<string, string> mediumAttributes )
         {
             var recipientEmail = new RockEmailMessage();
             recipientEmail.CurrentPerson = emailMessage.CurrentPerson;
@@ -605,32 +591,16 @@ namespace Rock.Communication.Transport
             return fromAddress;
         }
 
-        private string ResolveTextOrDefault( string stringToResolve, Person currentPerson, string enabledLavaCommands, Dictionary<string, object> mergeFields, string defaultValue )
+        private Dictionary<string, object> GetAllMergeFields( Person currentPerson, Dictionary<string, object> additionalMergeFields )
         {
-            var returnValue = stringToResolve.ResolveMergeFields( mergeFields, currentPerson, enabledLavaCommands );
-            return returnValue.IsNullOrWhiteSpace() ? defaultValue : returnValue;
-        }
-
-        private Dictionary<string, object> GetAllMergeFields( RockMessage rockMessage )
-        {
-
             // Common Merge Field
-            var mergeFields = Lava.LavaHelper.GetCommonMergeFields( null, rockMessage.CurrentPerson );
-            foreach ( var mergeField in rockMessage.AdditionalMergeFields )
+            var mergeFields = Lava.LavaHelper.GetCommonMergeFields( null, currentPerson );
+            foreach ( var mergeField in additionalMergeFields )
             {
                 mergeFields.AddOrReplace( mergeField.Key, mergeField.Value );
             }
 
             return mergeFields;
-        }
-
-        private EmailAddress CreateEmailAddressFromMailAddress( MailAddress address )
-        {
-            return new EmailAddress
-            {
-                Email = address.Address,
-                Name = address.DisplayName
-            };
         }
     }
 }
