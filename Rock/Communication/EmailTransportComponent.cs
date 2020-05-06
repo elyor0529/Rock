@@ -39,7 +39,7 @@ namespace Rock.Communication
                 return false;
             }
 
-            var templateMailMessage = GetMailMessage( emailMessage, mergeFields, globalAttributes );
+            var templateMailMessage = GetTemplateRockEmailMessage( emailMessage, mergeFields, globalAttributes );
             var organizationEmail = globalAttributes.GetValue( "OrganizationEmail" );
 
             foreach ( var rockMessageRecipient in rockMessage.GetRecipients() )
@@ -187,9 +187,9 @@ namespace Rock.Communication
         }
 
 
-        private RockEmailMessage GetMailMessage( RockMessage rockMessage, Dictionary<string, object> mergeFields, GlobalAttributesCache globalAttributes )
+        private RockEmailMessage GetTemplateRockEmailMessage( RockMessage rockMessage, Dictionary<string, object> mergeFields, GlobalAttributesCache globalAttributes )
         {
-            var resultEmailMessage = new RockEmailMessage();
+            var templateRockEmailMessage = new RockEmailMessage();
 
             var emailMessage = rockMessage as RockEmailMessage;
             if ( emailMessage == null )
@@ -197,9 +197,9 @@ namespace Rock.Communication
                 return null;
             }
 
-            resultEmailMessage.CurrentPerson = emailMessage.CurrentPerson;
-            resultEmailMessage.EnabledLavaCommands = emailMessage.EnabledLavaCommands;
-            resultEmailMessage.CssInliningEnabled = emailMessage.CssInliningEnabled;
+            templateRockEmailMessage.CurrentPerson = emailMessage.CurrentPerson;
+            templateRockEmailMessage.EnabledLavaCommands = emailMessage.EnabledLavaCommands;
+            templateRockEmailMessage.CssInliningEnabled = emailMessage.CssInliningEnabled;
 
             var fromAddress = GetFromAddress( emailMessage, mergeFields, globalAttributes );
             var fromName = GetFromName( emailMessage, mergeFields, globalAttributes );
@@ -209,15 +209,18 @@ namespace Rock.Communication
                 return null;
             }
 
-            resultEmailMessage.FromEmail = fromAddress;
-            resultEmailMessage.FromName = fromName;
+            templateRockEmailMessage.FromEmail = fromAddress;
+            templateRockEmailMessage.FromName = fromName;
 
             // CC
-            resultEmailMessage.CCEmails = emailMessage.CCEmails;
+            templateRockEmailMessage.CCEmails = emailMessage.CCEmails;
 
             // BCC
-            resultEmailMessage.BCCEmails = emailMessage.BCCEmails;
+            templateRockEmailMessage.BCCEmails = emailMessage.BCCEmails;
 
+            templateRockEmailMessage.Subject = emailMessage.Subject;
+            templateRockEmailMessage.Message = emailMessage.Message;
+            templateRockEmailMessage.PlainTextMessage = emailMessage.PlainTextMessage;
 
             // Attachments
             if ( emailMessage.Attachments.Any() )
@@ -228,15 +231,15 @@ namespace Rock.Communication
                     foreach ( var binaryFileId in emailMessage.Attachments.Where( a => a != null ).Select( a => a.Id ) )
                     {
                         var attachment = binaryFileService.Get( binaryFileId );
-                        resultEmailMessage.Attachments.Add( attachment );
+                        templateRockEmailMessage.Attachments.Add( attachment );
                     }
                 }
             }
 
             // Communication record for tracking opens & clicks
-            resultEmailMessage.MessageMetaData = emailMessage.MessageMetaData;
+            templateRockEmailMessage.MessageMetaData = emailMessage.MessageMetaData;
 
-            return resultEmailMessage;
+            return templateRockEmailMessage;
         }
 
         private RockEmailMessage GetMailMessage( Model.Communication communication, Dictionary<string, object> mergeFields, GlobalAttributesCache globalAttributes )
@@ -319,7 +322,7 @@ namespace Rock.Communication
             var checkResult = MailTransportHelper.CheckSafeSender( new List<string> { toEmailAddress.EmailAddress }, fromMailAddress, organizationEmail );
 
             // Reply To
-            if ( checkResult.IsUnsafeDomain )
+            if ( checkResult.IsUnsafeDomain && checkResult.SafeFromAddress != null )
             {
                 recipientEmail.ReplyToEmail = checkResult.SafeFromAddress.Address;
             }
@@ -329,7 +332,7 @@ namespace Rock.Communication
             }
 
             // From
-            if ( checkResult.IsUnsafeDomain )
+            if ( checkResult.IsUnsafeDomain && checkResult.SafeFromAddress != null )
             {
                 recipientEmail.FromName = checkResult.SafeFromAddress.DisplayName;
                 recipientEmail.FromEmail = checkResult.SafeFromAddress.Address;
@@ -416,7 +419,7 @@ namespace Rock.Communication
             var checkResult = MailTransportHelper.CheckSafeSender( new List<string> { toEmailAddress.EmailAddress }, fromMailAddress, organizationEmail );
 
             // Reply To
-            if ( checkResult.IsUnsafeDomain )
+            if ( checkResult.IsUnsafeDomain && checkResult.SafeFromAddress != null )
             {
                 recipientEmail.ReplyToEmail = checkResult.SafeFromAddress.Address;
             }
@@ -426,7 +429,7 @@ namespace Rock.Communication
             }
 
             // From
-            if ( checkResult.IsUnsafeDomain )
+            if ( checkResult.IsUnsafeDomain && checkResult.SafeFromAddress != null )
             {
                 recipientEmail.FromName = checkResult.SafeFromAddress.DisplayName;
                 recipientEmail.FromEmail = checkResult.SafeFromAddress.Address;
