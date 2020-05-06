@@ -209,8 +209,8 @@ namespace Rock.Communication
                 return null;
             }
 
-            var fromMailAddress = new MailAddress( fromAddress, fromName );
-            var organizationEmail = globalAttributes.GetValue( "OrganizationEmail" );
+            resultEmailMessage.FromEmail = fromAddress;
+            resultEmailMessage.FromName = fromName;
 
             // CC
             resultEmailMessage.CCEmails = emailMessage.CCEmails;
@@ -527,9 +527,13 @@ namespace Rock.Communication
         {
             // Common Merge Field
             var mergeFields = Lava.LavaHelper.GetCommonMergeFields( null, currentPerson );
-            foreach ( var mergeField in additionalMergeFields )
+
+            if ( additionalMergeFields != null )
             {
-                mergeFields.AddOrReplace( mergeField.Key, mergeField.Value );
+                foreach ( var mergeField in additionalMergeFields )
+                {
+                    mergeFields.AddOrReplace( mergeField.Key, mergeField.Value );
+                }
             }
 
             return mergeFields;
