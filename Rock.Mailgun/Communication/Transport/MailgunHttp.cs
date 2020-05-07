@@ -574,12 +574,12 @@ namespace Rock.Communication.Transport
 
                     restRequest.AddParameter( "from", organizationEmail );
 
-                    Parameter replyParam = restRequest.Parameters.Where( p => p.Name == "h:Reply-To" && p.Value.ToString() == organizationEmail ).FirstOrDefault();
+                    Parameter replyParam = restRequest.Parameters.Where( p => p.Name == "h:Reply-To" && p.Value.ToString() == fromEmail ).FirstOrDefault();
 
                     // Check the list of reply to address and add the org one if needed
                     if ( replyParam == null )
                     {
-                        restRequest.AddParameter( "h:Reply-To", organizationEmail );
+                        restRequest.AddParameter( "h:Reply-To", fromEmail );
                     }
                 }
             }
