@@ -319,7 +319,7 @@ namespace Rock.Communication
             recipientEmail.SetRecipients( new List<RockEmailMessageRecipient> { toEmailAddress } );
 
             var fromMailAddress = new MailAddress( emailMessage.FromEmail, emailMessage.FromName );
-            var checkResult = MailTransportHelper.CheckSafeSender( new List<string> { toEmailAddress.EmailAddress }, fromMailAddress, organizationEmail );
+            var checkResult = CheckSafeSender( new List<string> { toEmailAddress.EmailAddress }, fromMailAddress, organizationEmail );
 
             // Reply To
             if ( checkResult.IsUnsafeDomain && checkResult.SafeFromAddress != null )
@@ -416,7 +416,7 @@ namespace Rock.Communication
             recipientEmail.SetRecipients( new List<RockEmailMessageRecipient> { toEmailAddress } );
 
             var fromMailAddress = new MailAddress( emailMessage.FromEmail, emailMessage.FromName );
-            var checkResult = MailTransportHelper.CheckSafeSender( new List<string> { toEmailAddress.EmailAddress }, fromMailAddress, organizationEmail );
+            var checkResult = CheckSafeSender( new List<string> { toEmailAddress.EmailAddress }, fromMailAddress, organizationEmail );
 
             // Reply To
             if ( checkResult.IsUnsafeDomain && checkResult.SafeFromAddress != null )
@@ -508,6 +508,67 @@ namespace Rock.Communication
             recipientEmail.MessageMetaData["communication_recipient_guid"] = communicationRecipient.Guid.ToString();
 
             return recipientEmail;
+        }
+
+        protected List<string> GetSafeDomains()
+        {
+            // Get the safe sender domains
+            var safeDomainValues = DefinedTypeCache.Get( SystemGuid.DefinedType.COMMUNICATION_SAFE_SENDER_DOMAINS.AsGuid() ).DefinedValues;
+            return safeDomainValues.Select( v => v.Value ).ToList();
+        }
+
+        protected string GetEmailDomain(string emailAddress )
+        {
+            var fromParts = emailAddress.Split( new char[] { '@' }, StringSplitOptions.RemoveEmptyEntries );
+            if ( fromParts.Length == 2 )
+            {
+                return fromParts[1];
+            }
+            return "";
+        }
+
+        protected virtual SafeSenderResult CheckSafeSender( List<string> toEmailAddresses, MailAddress fromEmail, string organizationEmail )
+        {
+            var result = new SafeSenderResult();
+
+            // Get the safe sender domains
+            var safeDomains = GetSafeDomains();
+
+            // Check to make sure the From email domain is a safe sender, if so then we are done.
+            var emailDomain = GetEmailDomain(fromEmail.Address);
+            if ( emailDomain.IsNotNullOrWhiteSpace() && safeDomains.Contains( emailDomain, StringComparer.OrdinalIgnoreCase ) )
+            {
+                return result;
+            }
+
+            // The sender domain is not considered safe so check all the recipients to see if they have a domain that does not requrie a safe sender
+            var safeDomainValues = DefinedTypeCache.Get( SystemGuid.DefinedType.COMMUNICATION_SAFE_SENDER_DOMAINS.AsGuid() ).DefinedValues;
+            foreach ( var toEmailAddress in toEmailAddresses )
+            {
+                bool safe = false;
+                var toEmailDomain = GetEmailDomain( toEmailAddress );
+                if ( toEmailDomain.IsNotNullOrWhiteSpace() && safeDomains.Contains( toEmailDomain, StringComparer.OrdinalIgnoreCase ) )
+                {
+                    var domain = safeDomainValues.FirstOrDefault( dv => dv.Value.Equals( toEmailDomain, StringComparison.OrdinalIgnoreCase ) );
+                    safe = domain != null && domain.GetAttributeValue( "SafeToSendTo" ).AsBoolean();
+                }
+
+                if ( !safe )
+                {
+                    result.IsUnsafeDomain = true;
+                    break;
+                }
+            }
+
+            if ( result.IsUnsafeDomain )
+            {
+                if ( !string.IsNullOrWhiteSpace( organizationEmail ) && !organizationEmail.Equals( fromEmail.Address, StringComparison.OrdinalIgnoreCase ) )
+                {
+                    result.SafeFromAddress = new MailAddress( organizationEmail, fromEmail.DisplayName );
+                }
+            }
+
+            return result;
         }
 
         private string GetFromName( RockEmailMessage emailMessage, Dictionary<string, object> mergeFields, GlobalAttributesCache globalAttributes )

@@ -175,6 +175,13 @@ namespace Rock.Communication.Transport
             var fromEmailAddress = new MailAddress( rockEmailMessage.FromEmail, rockEmailMessage.FromName );
             restRequest.AddParameter( "from", fromEmailAddress.ToString() );
 
+            var safeSenderDomains = GetSafeDomains();
+            var fromDomain = GetEmailDomain( rockEmailMessage.FromEmail );
+            if ( safeSenderDomains.Contains( fromDomain ) )
+            {
+                restRequest.AddParameter( "h:Sender", fromEmailAddress.ToString() );
+            }
+
             // CC
             rockEmailMessage
                 .CCEmails
@@ -234,6 +241,15 @@ namespace Rock.Communication.Transport
                 Status = Response.StatusCode == HttpStatusCode.OK ? CommunicationRecipientStatus.Delivered : CommunicationRecipientStatus.Failed,
                 StatusNote = Response.StatusDescription
             };
+        }
+
+        protected override SafeSenderResult CheckSafeSender( List<string> toEmailAddresses, MailAddress fromEmail, string organizationEmail )
+        {
+            if( GetAttributeValue( "ReplaceUnsafeSender" ).AsBoolean( true ) )
+            {
+                return base.CheckSafeSender( toEmailAddresses, fromEmail, organizationEmail );
+            }
+            return new SafeSenderResult();
         }
     }
 }
