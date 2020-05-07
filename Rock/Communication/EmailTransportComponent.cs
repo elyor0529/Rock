@@ -322,9 +322,9 @@ namespace Rock.Communication
             var checkResult = CheckSafeSender( new List<string> { toEmailAddress.EmailAddress }, fromMailAddress, organizationEmail );
 
             // Reply To
-            if ( checkResult.IsUnsafeDomain && checkResult.SafeFromAddress != null )
+            if ( checkResult.IsUnsafeDomain && checkResult.ReplyToAddress != null )
             {
-                recipientEmail.ReplyToEmail = checkResult.SafeFromAddress.Address;
+                recipientEmail.ReplyToEmail = checkResult.ReplyToAddress.Address;
             }
             else if ( emailMessage.ReplyToEmail.IsNotNullOrWhiteSpace() )
             {
@@ -419,9 +419,9 @@ namespace Rock.Communication
             var checkResult = CheckSafeSender( new List<string> { toEmailAddress.EmailAddress }, fromMailAddress, organizationEmail );
 
             // Reply To
-            if ( checkResult.IsUnsafeDomain && checkResult.SafeFromAddress != null )
+            if ( checkResult.IsUnsafeDomain && checkResult.ReplyToAddress != null )
             {
-                recipientEmail.ReplyToEmail = checkResult.SafeFromAddress.Address;
+                recipientEmail.ReplyToEmail = checkResult.ReplyToAddress.Address;
             }
             else if ( emailMessage.ReplyToEmail.IsNotNullOrWhiteSpace() )
             {
@@ -566,6 +566,7 @@ namespace Rock.Communication
                 {
                     result.SafeFromAddress = new MailAddress( organizationEmail, fromEmail.DisplayName );
                 }
+                result.ReplyToAddress = fromEmail;
             }
 
             return result;

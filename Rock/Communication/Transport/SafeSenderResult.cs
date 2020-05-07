@@ -6,5 +6,6 @@ namespace Rock.Communication.Transport
     {
         public bool IsUnsafeDomain { get; set; }
         public MailAddress SafeFromAddress { get; set; }
+        public MailAddress ReplyToAddress { get; set; }
     }
 }
