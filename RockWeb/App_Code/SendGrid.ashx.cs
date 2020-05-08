@@ -16,23 +16,16 @@
 
 using System;
 using System.Collections.Generic;
-using System.Data.Entity;
-using System.Web;
-using System.Linq;
-
-using Newtonsoft.Json;
-
-using Rock;
-using Rock.Model;
-using Rock.Workflow.Action;
-using Rock.Web.Cache;
 using System.IO;
 using System.Text;
-using Newtonsoft.Json.Linq;
-using System.Threading.Tasks;
-using Rock.SendGrid.Webhook;
 using System.Threading;
+using System.Web;
+using Newtonsoft.Json;
+using Rock;
 using Rock.Logging;
+using Rock.Model;
+using Rock.SendGrid.Webhook;
+using Rock.Workflow.Action;
 
 public class SendGrid : IHttpAsyncHandler
 {
@@ -126,7 +119,7 @@ public class SendGrid : IHttpAsyncHandler
             _callback( this );
         }
 
-        private void ProcessJsonContent(HttpRequest request, HttpResponse response)
+        private void ProcessJsonContent( HttpRequest request, HttpResponse response )
         {
             string payload = string.Empty;
 
@@ -148,46 +141,46 @@ public class SendGrid : IHttpAsyncHandler
             }
 
             ProcessSendGridEventListAsync( eventList );
-            
+
             response.StatusCode = ( int ) System.Net.HttpStatusCode.OK;
         }
 
         private void ProcessSendGridEventListAsync( List<SendGridEvent> sendGridEvents )
         {
-            using ( var rockContext = new Rock.Data.RockContext() )
+            var rockContext = new Rock.Data.RockContext();
+
+            foreach ( var sendGridEvent in sendGridEvents )
             {
-                foreach ( var sendGridEvent in sendGridEvents )
-                {
-                    ProcessSendGridEvent( sendGridEvent, rockContext );
-                }
+                ProcessSendGridEvent( sendGridEvent, rockContext );
             }
+
         }
 
         private void ProcessSendGridEvent( SendGridEvent sendGridEvent, Rock.Data.RockContext rockContext )
         {
-            
-                Guid? actionGuid = null;
-                Guid? communicationRecipientGuid = null;
 
-                if ( !string.IsNullOrWhiteSpace( sendGridEvent.WorkflowActionGuid ) )
-                {
-                    actionGuid = sendGridEvent.WorkflowActionGuid.AsGuidOrNull();
-                }
+            Guid? actionGuid = null;
+            Guid? communicationRecipientGuid = null;
 
-                if ( !string.IsNullOrWhiteSpace( sendGridEvent.CommunicationRecipientGuid ) )
-                {
-                    communicationRecipientGuid = sendGridEvent.CommunicationRecipientGuid.AsGuidOrNull();
-                }
+            if ( !string.IsNullOrWhiteSpace( sendGridEvent.WorkflowActionGuid ) )
+            {
+                actionGuid = sendGridEvent.WorkflowActionGuid.AsGuidOrNull();
+            }
 
-                if ( actionGuid != null )
-                {
-                    ProcessForWorkflow( actionGuid, rockContext, sendGridEvent );
-                }
+            if ( !string.IsNullOrWhiteSpace( sendGridEvent.CommunicationRecipientGuid ) )
+            {
+                communicationRecipientGuid = sendGridEvent.CommunicationRecipientGuid.AsGuidOrNull();
+            }
 
-                if ( communicationRecipientGuid != null )
-                {
-                    ProcessForRecipient( communicationRecipientGuid, rockContext, sendGridEvent );
-                }
+            if ( actionGuid != null )
+            {
+                ProcessForWorkflow( actionGuid, rockContext, sendGridEvent );
+            }
+
+            if ( communicationRecipientGuid != null )
+            {
+                ProcessForRecipient( communicationRecipientGuid, rockContext, sendGridEvent );
+            }
         }
 
         /// <summary>
@@ -308,28 +301,27 @@ public class SendGrid : IHttpAsyncHandler
 
         private void ProcessForWorkflow( Guid? actionGuid, Rock.Data.RockContext rockContext, SendGridEvent payload )
         {
-            RockLogger.Log.Debug( RockLogDomains.Communications, "ProcessForRecipient {@payload}", payload );
+            RockLogger.Log.Debug( RockLogDomains.Communications, "ProcessForWorkflow {@payload}", payload );
 
             string status = string.Empty;
             switch ( payload.EventType )
             {
-                case "complained":
-                case "unsubscribed":
+                case "unsubscribe":
                 case "delivered":
                     status = SendEmailWithEvents.SENT_STATUS;
                     break;
 
-                case "clicked":
+                case "click":
                     status = SendEmailWithEvents.CLICKED_STATUS;
                     break;
 
-                case "opened":
+                case "open":
                     status = SendEmailWithEvents.OPENED_STATUS;
                     break;
 
                 case "failed":
                 case "dropped":
-                case "suppress-bounce":
+                case "blocked":
                 case "bounced":
                     status = SendEmailWithEvents.FAILED_STATUS;
                     string message = payload.ServerResponse.IsNotNullOrWhiteSpace() ? payload.ServerResponse : payload.EventTypeReason;
