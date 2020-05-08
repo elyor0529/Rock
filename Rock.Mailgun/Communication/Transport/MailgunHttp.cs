@@ -86,51 +86,7 @@ namespace Rock.Communication.Transport
                 return Response.StatusDescription;
             }
         }
-
-        /// <summary>
-        /// Validates the recipient.
-        /// </summary>
-        /// <param name="recipient">The recipient.</param>
-        /// <param name="isBulkCommunication">if set to <c>true</c> [is bulk communication].</param>
-        /// <returns></returns>
-        public override bool ValidRecipient( CommunicationRecipient recipient, bool isBulkCommunication )
-        {
-            bool valid = base.ValidRecipient( recipient, isBulkCommunication );
-            if ( valid )
-            {
-                var person = recipient?.PersonAlias?.Person;
-                if ( person != null )
-                {
-                    if ( string.IsNullOrWhiteSpace( person.Email ) )
-                    {
-                        recipient.Status = CommunicationRecipientStatus.Failed;
-                        recipient.StatusNote = "No Email Address";
-                        valid = false;
-                    }
-                    else if ( !person.IsEmailActive )
-                    {
-                        recipient.Status = CommunicationRecipientStatus.Failed;
-                        recipient.StatusNote = "Recipient Email Address is not active";
-                        valid = false;
-                    }
-                    else if ( person.EmailPreference == Model.EmailPreference.DoNotEmail )
-                    {
-                        recipient.Status = CommunicationRecipientStatus.Failed;
-                        recipient.StatusNote = "Communication Preference of 'Do Not Send Communication'";
-                        valid = false;
-                    }
-                    else if ( person.EmailPreference == Model.EmailPreference.NoMassEmails && isBulkCommunication )
-                    {
-                        recipient.Status = CommunicationRecipientStatus.Failed;
-                        recipient.StatusNote = "Communication Preference of 'No Bulk Communication'";
-                        valid = false;
-                    }
-                }
-            }
-
-            return valid;
-        }
-
+        
         private void AddAdditionalHeaders( RestRequest restRequest, Dictionary<string, string> headers )
         {
             // Add tracking settings

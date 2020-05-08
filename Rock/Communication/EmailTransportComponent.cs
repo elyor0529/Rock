@@ -15,7 +15,7 @@ using Rock.Web.Cache;
 
 namespace Rock.Communication
 {
-    public abstract class EmailTransportComponent  : TransportComponent
+    public abstract class EmailTransportComponent : TransportComponent
     {
         protected abstract EmailSendResponse SendEmail( RockEmailMessage rockEmailMessage );
 
@@ -323,14 +323,7 @@ namespace Rock.Communication
             var checkResult = CheckSafeSender( new List<string> { toEmailAddress.EmailAddress }, fromMailAddress, organizationEmail );
 
             // Reply To
-            if ( checkResult.IsUnsafeDomain && checkResult.ReplyToAddress != null )
-            {
-                recipientEmail.ReplyToEmail = checkResult.ReplyToAddress.Address;
-            }
-            else if ( emailMessage.ReplyToEmail.IsNotNullOrWhiteSpace() )
-            {
-                recipientEmail.ReplyToEmail = emailMessage.ReplyToEmail.ResolveMergeFields( mergeFields, emailMessage.CurrentPerson, emailMessage.EnabledLavaCommands );
-            }
+            recipientEmail.ReplyToEmail = GetRecipientReplyToAddress( emailMessage, mergeFields, checkResult );
 
             // From
             if ( checkResult.IsUnsafeDomain && checkResult.SafeFromAddress != null )
@@ -420,15 +413,8 @@ namespace Rock.Communication
             var checkResult = CheckSafeSender( new List<string> { toEmailAddress.EmailAddress }, fromMailAddress, organizationEmail );
 
             // Reply To
-            if ( checkResult.IsUnsafeDomain && checkResult.ReplyToAddress != null )
-            {
-                recipientEmail.ReplyToEmail = checkResult.ReplyToAddress.Address;
-            }
-            else if ( emailMessage.ReplyToEmail.IsNotNullOrWhiteSpace() )
-            {
-                recipientEmail.ReplyToEmail = emailMessage.ReplyToEmail.ResolveMergeFields( mergeFields, emailMessage.CurrentPerson, emailMessage.EnabledLavaCommands );
-            }
-
+            recipientEmail.ReplyToEmail = GetRecipientReplyToAddress( emailMessage, mergeFields, checkResult );
+            
             // From
             if ( checkResult.IsUnsafeDomain && checkResult.SafeFromAddress != null )
             {
@@ -518,7 +504,7 @@ namespace Rock.Communication
             return safeDomainValues.Select( v => v.Value ).ToList();
         }
 
-        protected string GetEmailDomain(string emailAddress )
+        protected string GetEmailDomain( string emailAddress )
         {
             var fromParts = emailAddress.Split( new char[] { '@' }, StringSplitOptions.RemoveEmptyEntries );
             if ( fromParts.Length == 2 )
@@ -536,7 +522,7 @@ namespace Rock.Communication
             var safeDomains = GetSafeDomains();
 
             // Check to make sure the From email domain is a safe sender, if so then we are done.
-            var emailDomain = GetEmailDomain(fromEmail.Address);
+            var emailDomain = GetEmailDomain( fromEmail.Address );
             if ( emailDomain.IsNotNullOrWhiteSpace() && safeDomains.Contains( emailDomain, StringComparer.OrdinalIgnoreCase ) )
             {
                 return result;
@@ -603,6 +589,72 @@ namespace Rock.Communication
             }
 
             return mergeFields;
+        }
+
+        private string GetRecipientReplyToAddress(RockEmailMessage emailMessage, Dictionary<string, object> mergeFields, SafeSenderResult safeSenderResult )
+        {
+            var replyToAddress = string.Empty;
+            if ( emailMessage.ReplyToEmail.IsNotNullOrWhiteSpace() )
+            {
+                replyToAddress = emailMessage.ReplyToEmail.ResolveMergeFields( mergeFields, emailMessage.CurrentPerson, emailMessage.EnabledLavaCommands );
+            }
+
+            if ( safeSenderResult.IsUnsafeDomain && safeSenderResult.ReplyToAddress != null )
+            {
+                if ( replyToAddress.IsNullOrWhiteSpace() )
+                {
+                    replyToAddress = safeSenderResult.ReplyToAddress.ToString();
+                }
+                else
+                {
+                    replyToAddress += $",{safeSenderResult.ReplyToAddress.ToString()}";
+                }
+            }
+            return replyToAddress;
+        }
+
+        /// <summary>
+        /// Validates the recipient.
+        /// </summary>
+        /// <param name="recipient">The recipient.</param>
+        /// <param name="isBulkCommunication">if set to <c>true</c> [is bulk communication].</param>
+        /// <returns></returns>
+        public override bool ValidRecipient( CommunicationRecipient recipient, bool isBulkCommunication )
+        {
+            bool valid = base.ValidRecipient( recipient, isBulkCommunication );
+            if ( valid )
+            {
+                var person = recipient?.PersonAlias?.Person;
+                if ( person != null )
+                {
+                    if ( string.IsNullOrWhiteSpace( person.Email ) )
+                    {
+                        recipient.Status = CommunicationRecipientStatus.Failed;
+                        recipient.StatusNote = "No Email Address";
+                        valid = false;
+                    }
+                    else if ( !person.IsEmailActive )
+                    {
+                        recipient.Status = CommunicationRecipientStatus.Failed;
+                        recipient.StatusNote = "Recipient Email Address is not active";
+                        valid = false;
+                    }
+                    else if ( person.EmailPreference == Model.EmailPreference.DoNotEmail )
+                    {
+                        recipient.Status = CommunicationRecipientStatus.Failed;
+                        recipient.StatusNote = "Communication Preference of 'Do Not Send Communication'";
+                        valid = false;
+                    }
+                    else if ( person.EmailPreference == Model.EmailPreference.NoMassEmails && isBulkCommunication )
+                    {
+                        recipient.Status = CommunicationRecipientStatus.Failed;
+                        recipient.StatusNote = "Communication Preference of 'No Bulk Communication'";
+                        valid = false;
+                    }
+                }
+            }
+
+            return valid;
         }
     }
 }

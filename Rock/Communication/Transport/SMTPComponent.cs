@@ -153,6 +153,9 @@ namespace Rock.Communication.Transport
             var recipients = rockEmailMessage.GetRecipients().ToList();
             recipients.ForEach( r => mailMessage.To.Add( new MailAddress( r.To, r.Name ) ) );
 
+            // reply to
+            mailMessage.ReplyToList.Add( rockEmailMessage.ReplyToEmail );
+
             // cc
             rockEmailMessage
                 .CCEmails
@@ -207,51 +210,7 @@ namespace Rock.Communication.Transport
 
             return mailMessage;
         }
-
-        /// <summary>
-        /// Validates the recipient.
-        /// </summary>
-        /// <param name="recipient">The recipient.</param>
-        /// <param name="isBulkCommunication">if set to <c>true</c> [is bulk communication].</param>
-        /// <returns></returns>
-        public override bool ValidRecipient( CommunicationRecipient recipient, bool isBulkCommunication )
-        {
-            bool valid = base.ValidRecipient( recipient, isBulkCommunication );
-            if ( valid )
-            {
-                var person = recipient?.PersonAlias?.Person;
-                if ( person != null )
-                {
-                    if ( string.IsNullOrWhiteSpace( person.Email ) )
-                    {
-                        recipient.Status = CommunicationRecipientStatus.Failed;
-                        recipient.StatusNote = "No Email Address";
-                        valid = false;
-                    }
-                    else if ( !person.IsEmailActive )
-                    {
-                        recipient.Status = CommunicationRecipientStatus.Failed;
-                        recipient.StatusNote = "Recipient Email Address is not active";
-                        valid = false;
-                    }
-                    else if ( person.EmailPreference == Model.EmailPreference.DoNotEmail )
-                    {
-                        recipient.Status = CommunicationRecipientStatus.Failed;
-                        recipient.StatusNote = "Communication Preference of 'Do Not Send Communication'";
-                        valid = false;
-                    }
-                    else if ( person.EmailPreference == Model.EmailPreference.NoMassEmails && isBulkCommunication )
-                    {
-                        recipient.Status = CommunicationRecipientStatus.Failed;
-                        recipient.StatusNote = "Communication Preference of 'No Bulk Communication'";
-                        valid = false;
-                    }
-                }
-            }
-
-            return valid;
-        }
-
+        
         /// <summary>
         /// Adds any additional headers.
         /// </summary>
