@@ -109,7 +109,7 @@ namespace Rock.Communication
 
                 var globalAttributes = GlobalAttributesCache.Get();
 
-                var templateEmailMessage = GetMailMessage( communication, mergeFields, globalAttributes );
+                var templateEmailMessage = GetTemplateRockEmailMessage( communication, mergeFields, globalAttributes );
                 var organizationEmail = globalAttributes.GetValue( "OrganizationEmail" );
 
                 var publicAppRoot = globalAttributes.GetValue( "PublicApplicationRoot" ).EnsureTrailingForwardslash();
@@ -243,7 +243,7 @@ namespace Rock.Communication
             return templateRockEmailMessage;
         }
 
-        private RockEmailMessage GetMailMessage( Model.Communication communication, Dictionary<string, object> mergeFields, GlobalAttributesCache globalAttributes )
+        private RockEmailMessage GetTemplateRockEmailMessage( Model.Communication communication, Dictionary<string, object> mergeFields, GlobalAttributesCache globalAttributes )
         {
             var resultEmailMessage = new RockEmailMessage();
 
@@ -365,7 +365,7 @@ namespace Rock.Communication
             return recipientEmail;
         }
 
-        public RockEmailMessage GetRecipientRockEmailMessage( RockEmailMessage emailMessage, Model.Communication communication, CommunicationRecipient communicationRecipient, Dictionary<string, object> mergeFields, string organizationEmail, Dictionary<string, string> mediumAttributes )
+        private RockEmailMessage GetRecipientRockEmailMessage( RockEmailMessage emailMessage, Model.Communication communication, CommunicationRecipient communicationRecipient, Dictionary<string, object> mergeFields, string organizationEmail, Dictionary<string, string> mediumAttributes )
         {
             var recipientEmail = new RockEmailMessage();
             recipientEmail.CurrentPerson = emailMessage.CurrentPerson;
