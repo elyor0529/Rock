@@ -101,7 +101,7 @@ namespace Rock.SendGrid.Webhook
             get
             {
                 var clientInfo = GetClientInfo();
-                return clientInfo.OS.Family;
+                return clientInfo?.OS.Family ?? string.Empty;
             }
         }
 
@@ -110,7 +110,7 @@ namespace Rock.SendGrid.Webhook
             get
             {
                 var clientInfo = GetClientInfo();
-                return clientInfo.UA.Family;
+                return clientInfo?.UA.Family ?? string.Empty;
             }
         }
 
@@ -119,7 +119,7 @@ namespace Rock.SendGrid.Webhook
             get
             {
                 var clientInfo = GetClientInfo();
-                return clientInfo.Device.Family;
+                return clientInfo?.Device.Family ?? string.Empty;
             }
         }
 
@@ -128,7 +128,7 @@ namespace Rock.SendGrid.Webhook
             get
             {
                 var clientInfo = GetClientInfo();
-                return clientInfo.Device.Brand;
+                return clientInfo?.Device.Brand ?? string.Empty;
             }
         }
 

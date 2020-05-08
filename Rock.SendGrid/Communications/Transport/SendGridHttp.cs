@@ -142,7 +142,8 @@ namespace Rock.Communication.Transport
             var response = client.SendEmailAsync( sendGridMessage ).GetAwaiter().GetResult();
             return new EmailSendResponse
             {
-                Status = response.StatusCode == HttpStatusCode.Accepted ? CommunicationRecipientStatus.Delivered : CommunicationRecipientStatus.Failed
+                Status = response.StatusCode == HttpStatusCode.Accepted ? CommunicationRecipientStatus.Delivered : CommunicationRecipientStatus.Failed,
+                StatusNote = response.Body.ReadAsStringAsync().GetAwaiter().GetResult()
             };
         }
     }

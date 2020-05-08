@@ -154,16 +154,18 @@ public class SendGrid : IHttpAsyncHandler
 
         private void ProcessSendGridEventListAsync( List<SendGridEvent> sendGridEvents )
         {
-            foreach ( var sendGridEvent in sendGridEvents )
+            using ( var rockContext = new Rock.Data.RockContext() )
             {
-                ProcessSendGridEvent( sendGridEvent );
+                foreach ( var sendGridEvent in sendGridEvents )
+                {
+                    ProcessSendGridEvent( sendGridEvent, rockContext );
+                }
             }
         }
 
-        private void ProcessSendGridEvent( SendGridEvent sendGridEvent )
+        private void ProcessSendGridEvent( SendGridEvent sendGridEvent, Rock.Data.RockContext rockContext )
         {
-            using ( var rockContext = new Rock.Data.RockContext() )
-            {
+            
                 Guid? actionGuid = null;
                 Guid? communicationRecipientGuid = null;
 
@@ -184,9 +186,8 @@ public class SendGrid : IHttpAsyncHandler
 
                 if ( communicationRecipientGuid != null )
                 {
-                    ProcessForReceipent( communicationRecipientGuid, rockContext, sendGridEvent );
+                    ProcessForRecipient( communicationRecipientGuid, rockContext, sendGridEvent );
                 }
-            }
         }
 
         /// <summary>
@@ -195,8 +196,10 @@ public class SendGrid : IHttpAsyncHandler
         /// <param name="eventType">Type of the event.</param>
         /// <param name="communicationRecipientGuid">The communication recipient unique identifier.</param>
         /// <param name="rockContext">The rock context.</param>
-        private void ProcessForReceipent( Guid? communicationRecipientGuid, Rock.Data.RockContext rockContext, SendGridEvent payload )
+        private void ProcessForRecipient( Guid? communicationRecipientGuid, Rock.Data.RockContext rockContext, SendGridEvent payload )
         {
+            RockLogger.Log.Debug( RockLogDomains.Communications, "ProcessForRecipient {@payload}", payload );
+
             if ( !communicationRecipientGuid.HasValue )
             {
                 return;
@@ -205,8 +208,6 @@ public class SendGrid : IHttpAsyncHandler
             var communicationRecipient = new CommunicationRecipientService( rockContext ).Get( communicationRecipientGuid.Value );
             if ( communicationRecipient != null && communicationRecipient.Communication != null )
             {
-                RockLogger.Log.Debug( RockLogDomains.Communications, "ProcessForReceipent {@payload}", payload );
-
                 var communicationGuid = Rock.SystemGuid.InteractionChannel.COMMUNICATION.AsGuid();
                 var interactionComponent = new InteractionComponentService( rockContext )
                     .GetComponentByEntityId( communicationGuid, communicationRecipient.CommunicationId, communicationRecipient.Communication.Subject );
@@ -307,6 +308,8 @@ public class SendGrid : IHttpAsyncHandler
 
         private void ProcessForWorkflow( Guid? actionGuid, Rock.Data.RockContext rockContext, SendGridEvent payload )
         {
+            RockLogger.Log.Debug( RockLogDomains.Communications, "ProcessForRecipient {@payload}", payload );
+
             string status = string.Empty;
             switch ( payload.EventType )
             {

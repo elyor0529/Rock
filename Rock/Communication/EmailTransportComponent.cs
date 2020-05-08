@@ -153,6 +153,7 @@ namespace Rock.Communication
 
                             // Update recipient status and status note
                             recipient.Status = result.Status;
+                            recipient.StatusNote = result.StatusNote;
                             recipient.TransportEntityTypeName = this.GetType().FullName;
 
                             // Log it
@@ -565,8 +566,8 @@ namespace Rock.Communication
                 if ( !string.IsNullOrWhiteSpace( organizationEmail ) && !organizationEmail.Equals( fromEmail.Address, StringComparison.OrdinalIgnoreCase ) )
                 {
                     result.SafeFromAddress = new MailAddress( organizationEmail, fromEmail.DisplayName );
+                    result.ReplyToAddress = fromEmail;
                 }
-                result.ReplyToAddress = fromEmail;
             }
 
             return result;
