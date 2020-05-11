@@ -574,7 +574,7 @@ namespace Rock.Communication.Transport
 
                     restRequest.AddParameter( "from", new MailAddress( organizationEmail, fromName ).ToString() );
 
-                    // Check the list of reply to address and add the org one if needed
+                    // Check the list of reply to addresses and add the from address if needed.
                     Parameter replyParam = restRequest
                         .Parameters
                         .Where( p => p.Name == "h:Reply-To"
