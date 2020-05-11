@@ -394,9 +394,11 @@ namespace Rock.Communication
                 return null;
             }
 
+            templateRockEmailMessage.AppRoot = emailMessage.AppRoot;
             templateRockEmailMessage.CurrentPerson = emailMessage.CurrentPerson;
             templateRockEmailMessage.EnabledLavaCommands = emailMessage.EnabledLavaCommands;
             templateRockEmailMessage.CssInliningEnabled = emailMessage.CssInliningEnabled;
+            templateRockEmailMessage.ReplyToEmail = emailMessage.ReplyToEmail;
 
             var fromAddress = GetFromAddress( emailMessage, mergeFields, globalAttributes );
             var fromName = GetFromName( emailMessage, mergeFields, globalAttributes );
@@ -484,6 +486,8 @@ namespace Rock.Communication
             var recipientEmail = new RockEmailMessage();
             recipientEmail.CurrentPerson = emailMessage.CurrentPerson;
             recipientEmail.EnabledLavaCommands = emailMessage.EnabledLavaCommands;
+            recipientEmail.AppRoot = emailMessage.AppRoot;
+            recipientEmail.CssInliningEnabled = emailMessage.CssInliningEnabled;
             // CC
             recipientEmail.CCEmails = emailMessage.CCEmails;
 
@@ -536,6 +540,9 @@ namespace Rock.Communication
             // Subject
             string subject = ResolveText( emailMessage.Subject, emailMessage.CurrentPerson, emailMessage.EnabledLavaCommands, rockMessageRecipient.MergeFields, emailMessage.AppRoot, emailMessage.ThemeRoot ).Left( 998 );
             recipientEmail.Subject = subject;
+
+            // Plain Text Message
+            recipientEmail.PlainTextMessage = ResolveText( emailMessage.PlainTextMessage, emailMessage.CurrentPerson, emailMessage.EnabledLavaCommands, rockMessageRecipient.MergeFields, emailMessage.AppRoot, emailMessage.ThemeRoot );
 
             // Body (HTML)
             string body = ResolveText( emailMessage.Message, emailMessage.CurrentPerson, emailMessage.EnabledLavaCommands, rockMessageRecipient.MergeFields, emailMessage.AppRoot, emailMessage.ThemeRoot );
