@@ -135,7 +135,9 @@ namespace Rock.Web.UI.Controls
             foreach ( string nameValue in nameValues )
             {
                 string[] nameAndValue = nameValue.Split( new char[] { '^' } );
-                nameAndValue = nameAndValue.Select( s => HttpUtility.UrlDecode( s ) ).ToArray(); // url decode array items
+
+                // Decode the values. Use UnescapeDataString() here because HttpUtility.UrlDecode() replaces "+" with " " which is unwanted behavior.
+                nameAndValue = nameAndValue.Select( s => System.Uri.UnescapeDataString( s ) ).ToArray();
 
                 writer.AddAttribute( HtmlTextWriterAttribute.Class, "controls controls-row form-control-group" );
                 writer.RenderBeginTag( HtmlTextWriterTag.Div );
