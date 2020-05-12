@@ -430,6 +430,8 @@ namespace Rock.Communication
                     foreach ( var binaryFileId in emailMessage.Attachments.Where( a => a != null ).Select( a => a.Id ) )
                     {
                         var attachment = binaryFileService.Get( binaryFileId );
+                        // We need to call content stream to make sure it is loaded while we have the rock context.
+                        var attachmentString = attachment.ContentStream;
                         templateRockEmailMessage.Attachments.Add( attachment );
                     }
                 }
@@ -458,11 +460,6 @@ namespace Rock.Communication
             var fromAddress = GetFromAddress( resultEmailMessage, mergeFields, globalAttributes );
             var fromName = GetFromName( resultEmailMessage, mergeFields, globalAttributes );
 
-            if ( fromAddress.IsNullOrWhiteSpace() )
-            {
-                return null;
-            }
-
             resultEmailMessage.FromEmail = fromAddress;
             resultEmailMessage.FromName = fromName;
 
@@ -477,6 +474,11 @@ namespace Rock.Communication
 
             // Attachments
             resultEmailMessage.Attachments = communication.GetAttachments( CommunicationType.Email ).Select( a => a.BinaryFile ).ToList();
+            // Load up the content stream while the context is still active.
+            for ( int i = 0; i < resultEmailMessage.Attachments.Count; i++ )
+            {
+                var _ = resultEmailMessage.Attachments[i].ContentStream;
+            }
 
             return resultEmailMessage;
         }
@@ -566,6 +568,8 @@ namespace Rock.Communication
             var recipientEmail = new RockEmailMessage();
             recipientEmail.CurrentPerson = emailMessage.CurrentPerson;
             recipientEmail.EnabledLavaCommands = emailMessage.EnabledLavaCommands;
+            recipientEmail.AppRoot = emailMessage.AppRoot;
+            recipientEmail.CssInliningEnabled = emailMessage.CssInliningEnabled;
 
             // CC
             if ( communication.CCEmails.IsNotNullOrWhiteSpace() )
