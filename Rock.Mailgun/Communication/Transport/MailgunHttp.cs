@@ -18,22 +18,17 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.Composition;
-using System.Data.Entity;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Mail;
 using System.Net.Mime;
-using System.Text.RegularExpressions;
 
 using RestSharp;
 using RestSharp.Authenticators;
 
 using Rock.Attribute;
-using Rock.Web.Cache;
-using Rock.Data;
 using Rock.Model;
-using Rock.Transactions;
 
 namespace Rock.Communication.Transport
 {
@@ -86,7 +81,50 @@ namespace Rock.Communication.Transport
                 return Response.StatusDescription;
             }
         }
-        
+
+        /// <summary>
+        /// Gets a value indicating whether transport has ability to track recipients opening the communication.
+        /// Mailgun automatically trackes opens, clicks, and unsubscribes. Use this to override domain setting.
+        /// </summary>
+        /// <value>
+        /// <c>true</c> if transport can track opens; otherwise, <c>false</c>.
+        /// </value>
+        protected override EmailSendResponse SendEmail( RockEmailMessage rockEmailMessage )
+        {
+            var restRequest = GetRestRequestFromRockEmailMessage( rockEmailMessage );
+
+            var restClient = new RestClient
+            {
+                BaseUrl = new Uri( GetAttributeValue( "BaseURL" ) ),
+                Authenticator = new HttpBasicAuthenticator( "api", GetAttributeValue( "APIKey" ) )
+            };
+
+            // Call the API and get the response
+            Response = restClient.Execute( restRequest );
+
+            return new EmailSendResponse
+            {
+                Status = Response.StatusCode == HttpStatusCode.OK ? CommunicationRecipientStatus.Delivered : CommunicationRecipientStatus.Failed,
+                StatusNote = Response.StatusDescription
+            };
+        }
+
+        /// <summary>
+        /// Checks the safe sender.
+        /// </summary>
+        /// <param name="toEmailAddresses">To email addresses.</param>
+        /// <param name="fromEmail">From email.</param>
+        /// <param name="organizationEmail">The organization email.</param>
+        /// <returns></returns>
+        protected override SafeSenderResult CheckSafeSender( List<string> toEmailAddresses, MailAddress fromEmail, string organizationEmail )
+        {
+            if ( GetAttributeValue( "ReplaceUnsafeSender" ).AsBoolean( true ) )
+            {
+                return base.CheckSafeSender( toEmailAddresses, fromEmail, organizationEmail );
+            }
+            return new SafeSenderResult();
+        }
+
         private void AddAdditionalHeaders( RestRequest restRequest, Dictionary<string, string> headers )
         {
             // Add tracking settings
@@ -143,7 +181,7 @@ namespace Rock.Communication.Transport
                 .CCEmails
                 .Where( e => e != string.Empty )
                 .ToList()
-                .ForEach(e => restRequest.AddParameter( "cc", e ));
+                .ForEach( e => restRequest.AddParameter( "cc", e ) );
 
             // BCC
             rockEmailMessage
@@ -177,35 +215,6 @@ namespace Rock.Communication.Transport
             }
 
             return restRequest;
-        }
-
-        protected override EmailSendResponse SendEmail( RockEmailMessage rockEmailMessage )
-        {
-            var restRequest = GetRestRequestFromRockEmailMessage( rockEmailMessage );
-
-            var restClient = new RestClient
-            {
-                BaseUrl = new Uri( GetAttributeValue( "BaseURL" ) ),
-                Authenticator = new HttpBasicAuthenticator( "api", GetAttributeValue( "APIKey" ) )
-            };
-
-            // Call the API and get the response
-            Response = restClient.Execute( restRequest );
-
-            return new EmailSendResponse
-            {
-                Status = Response.StatusCode == HttpStatusCode.OK ? CommunicationRecipientStatus.Delivered : CommunicationRecipientStatus.Failed,
-                StatusNote = Response.StatusDescription
-            };
-        }
-
-        protected override SafeSenderResult CheckSafeSender( List<string> toEmailAddresses, MailAddress fromEmail, string organizationEmail )
-        {
-            if( GetAttributeValue( "ReplaceUnsafeSender" ).AsBoolean( true ) )
-            {
-                return base.CheckSafeSender( toEmailAddresses, fromEmail, organizationEmail );
-            }
-            return new SafeSenderResult();
         }
     }
 }

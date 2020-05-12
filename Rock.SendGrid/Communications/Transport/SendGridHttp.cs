@@ -1,18 +1,27 @@
-﻿using System;
-using System.Collections.Generic;
+﻿// <copyright>
+// Copyright by the Spark Development Network
+//
+// Licensed under the Rock Community License (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.rockrms.com/license
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// </copyright>
+
+using System;
 using System.ComponentModel;
 using System.ComponentModel.Composition;
-using System.Data.Entity;
 using System.IO;
 using System.Linq;
 using System.Net;
-using System.Net.Mail;
-using System.Text.RegularExpressions;
 using Rock.Attribute;
-using Rock.Data;
 using Rock.Model;
-using Rock.Transactions;
-using Rock.Web.Cache;
 using SendGrid;
 using SendGrid.Helpers.Mail;
 
@@ -57,6 +66,26 @@ namespace Rock.Communication.Transport
         public override bool CanTrackOpens
         {
             get { return GetAttributeValue( AttributeKey.TrackOpens ).AsBoolean( true ); }
+        }
+
+        /// <summary>
+        /// Send the implementation specific email. This class will call this method and pass the post processed data in a  rock email message which
+        /// can then be used to send the implementation specific message.
+        /// </summary>
+        /// <param name="rockEmailMessage">The rock email message.</param>
+        /// <returns></returns>
+        protected override EmailSendResponse SendEmail( RockEmailMessage rockEmailMessage )
+        {
+            var client = new SendGridClient( GetAttributeValue( AttributeKey.ApiKey ), host: GetAttributeValue( AttributeKey.BaseUrl ) );
+            var sendGridMessage = GetSendGridMessageFromRockEmailMessage( rockEmailMessage );
+
+            // Send it
+            var response = client.SendEmailAsync( sendGridMessage ).GetAwaiter().GetResult();
+            return new EmailSendResponse
+            {
+                Status = response.StatusCode == HttpStatusCode.Accepted ? CommunicationRecipientStatus.Delivered : CommunicationRecipientStatus.Failed,
+                StatusNote = response.Body.ReadAsStringAsync().GetAwaiter().GetResult()
+            };
         }
 
         private SendGridMessage GetSendGridMessageFromRockEmailMessage( RockEmailMessage rockEmailMessage )
@@ -131,20 +160,6 @@ namespace Rock.Communication.Transport
             }
 
             return sendGridMessage;
-        }
-
-        protected override EmailSendResponse SendEmail( RockEmailMessage rockEmailMessage )
-        {
-            var client = new SendGridClient( GetAttributeValue( AttributeKey.ApiKey ), host: GetAttributeValue( AttributeKey.BaseUrl ) );
-            var sendGridMessage = GetSendGridMessageFromRockEmailMessage( rockEmailMessage );
-
-            // Send it
-            var response = client.SendEmailAsync( sendGridMessage ).GetAwaiter().GetResult();
-            return new EmailSendResponse
-            {
-                Status = response.StatusCode == HttpStatusCode.Accepted ? CommunicationRecipientStatus.Delivered : CommunicationRecipientStatus.Failed,
-                StatusNote = response.Body.ReadAsStringAsync().GetAwaiter().GetResult()
-            };
         }
     }
 }

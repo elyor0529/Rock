@@ -117,6 +117,12 @@ namespace Rock.Communication.Transport
 
         #endregion
 
+        /// <summary>
+        /// Send the implementation specific email. This class will call this method and pass the post processed data in a  rock email message which
+        /// can then be used to send the implementation specific message.
+        /// </summary>
+        /// <param name="rockEmailMessage">The rock email message.</param>
+        /// <returns></returns>
         protected override EmailSendResponse SendEmail( RockEmailMessage rockEmailMessage )
         {
             var mailMessage = GetMailMessageFromRockEmailMessage( rockEmailMessage );

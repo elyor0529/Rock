@@ -14,67 +14,167 @@
 // limitations under the License.
 // </copyright>
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using Newtonsoft.Json;
 using UAParser;
 
 namespace Rock.SendGrid.Webhook
 {
+    /// <summary>
+    /// A class to represent the events sent by send grid to the webhook.
+    /// </summary>
     [JsonObject( IsReference = false )]
     public class SendGridEvent
     {
+        /// <summary>
+        /// Gets or sets the email.
+        /// </summary>
+        /// <value>
+        /// The email.
+        /// </value>
         [JsonProperty( PropertyName = "email" )]
         public string Email { get; set; }
 
+        /// <summary>
+        /// Gets or sets the timestamp.
+        /// </summary>
+        /// <value>
+        /// The timestamp.
+        /// </value>
         [JsonProperty( PropertyName = "timestamp" )]
         public int Timestamp { get; set; }
 
+        /// <summary>
+        /// Gets or sets the type of the event.
+        /// </summary>
+        /// <value>
+        /// The type of the event.
+        /// </value>
         [JsonProperty( PropertyName = "event" )]
         public string EventType { get; set; }
 
+        /// <summary>
+        /// Gets or sets the SMTP identifier.
+        /// </summary>
+        /// <value>
+        /// The SMTP identifier.
+        /// </value>
         [JsonProperty( PropertyName = "smtp-id" )]
         public string SmtpId { get; set; }
 
+        /// <summary>
+        /// Gets or sets the user agent.
+        /// </summary>
+        /// <value>
+        /// The user agent.
+        /// </value>
         [JsonProperty( PropertyName = "useragent" )]
         public string UserAgent { get; set; }
 
+        /// <summary>
+        /// Gets or sets the ip address.
+        /// </summary>
+        /// <value>
+        /// The ip address.
+        /// </value>
         [JsonProperty( PropertyName = "ip" )]
         public string IpAddress { get; set; }
 
+        /// <summary>
+        /// Gets or sets the send grid event identifier.
+        /// </summary>
+        /// <value>
+        /// The send grid event identifier.
+        /// </value>
         [JsonProperty( PropertyName = "sg_event_id" )]
         public string SendGridEventId { get; set; }
 
+        /// <summary>
+        /// Gets or sets the send grid message identifier.
+        /// </summary>
+        /// <value>
+        /// The send grid message identifier.
+        /// </value>
         [JsonProperty( PropertyName = "sg_message_id" )]
         public string SendGridMessageId { get; set; }
 
+        /// <summary>
+        /// Gets or sets the event type reason.
+        /// </summary>
+        /// <value>
+        /// The event type reason.
+        /// </value>
         [JsonProperty( PropertyName = "reason" )]
         public string EventTypeReason { get; set; }
 
+        /// <summary>
+        /// Gets or sets the status.
+        /// </summary>
+        /// <value>
+        /// The status.
+        /// </value>
         [JsonProperty( PropertyName = "status" )]
         public string Status { get; set; }
 
+        /// <summary>
+        /// Gets or sets the server response.
+        /// </summary>
+        /// <value>
+        /// The server response.
+        /// </value>
         [JsonProperty( PropertyName = "response" )]
         public string ServerResponse { get; set; }
 
+        /// <summary>
+        /// Gets or sets the TLS.
+        /// </summary>
+        /// <value>
+        /// The TLS.
+        /// </value>
         [JsonProperty( PropertyName = "tls" )]
         public string Tls { get; set; }
 
+        /// <summary>
+        /// Gets or sets the URL.
+        /// </summary>
+        /// <value>
+        /// The URL.
+        /// </value>
         [JsonProperty( PropertyName = "url" )]
         public string Url { get; set; }
 
+        /// <summary>
+        /// Gets or sets the URL offset.
+        /// </summary>
+        /// <value>
+        /// The URL offset.
+        /// </value>
         [JsonProperty( PropertyName = "urloffset" )]
         public int UrlOffset { get; set; }
 
+        /// <summary>
+        /// Gets or sets the delivery attempt count.
+        /// </summary>
+        /// <value>
+        /// The delivery attempt count.
+        /// </value>
         [JsonProperty( PropertyName = "attempt" )]
         public string DeliveryAttemptCount { get; set; }
 
+        /// <summary>
+        /// Gets or sets the category.
+        /// </summary>
+        /// <value>
+        /// The category.
+        /// </value>
         [JsonProperty( PropertyName = "category" )]
         public string Category { get; set; }
 
+        /// <summary>
+        /// Gets or sets the type of the bounce.
+        /// </summary>
+        /// <value>
+        /// The type of the bounce.
+        /// </value>
         [JsonProperty( PropertyName = "type" )]
         public string BounceType { get; set; }
 
@@ -96,6 +196,12 @@ namespace Rock.SendGrid.Webhook
         [JsonProperty( PropertyName = "communication_recipient_guid" )]
         public string CommunicationRecipientGuid { get; set; }
 
+        /// <summary>
+        /// Gets the client os.
+        /// </summary>
+        /// <value>
+        /// The client os.
+        /// </value>
         public string ClientOs
         {
             get
@@ -105,6 +211,12 @@ namespace Rock.SendGrid.Webhook
             }
         }
 
+        /// <summary>
+        /// Gets the client browser.
+        /// </summary>
+        /// <value>
+        /// The client browser.
+        /// </value>
         public string ClientBrowser
         {
             get
@@ -114,6 +226,12 @@ namespace Rock.SendGrid.Webhook
             }
         }
 
+        /// <summary>
+        /// Gets the type of the client device.
+        /// </summary>
+        /// <value>
+        /// The type of the client device.
+        /// </value>
         public string ClientDeviceType
         {
             get
@@ -123,6 +241,12 @@ namespace Rock.SendGrid.Webhook
             }
         }
 
+        /// <summary>
+        /// Gets the client device brand.
+        /// </summary>
+        /// <value>
+        /// The client device brand.
+        /// </value>
         public string ClientDeviceBrand
         {
             get
@@ -135,7 +259,7 @@ namespace Rock.SendGrid.Webhook
         private ClientInfo _clientInfo = null;
         private ClientInfo GetClientInfo()
         {
-            if( _clientInfo == null && UserAgent.IsNotNullOrWhiteSpace() )
+            if ( _clientInfo == null && UserAgent.IsNotNullOrWhiteSpace() )
             {
                 var parser = Parser.GetDefault();
                 _clientInfo = parser.Parse( UserAgent );
