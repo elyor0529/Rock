@@ -507,6 +507,7 @@ namespace Rock.Web.UI.Controls
                     ( component as Reporting.DataFilter.PropertyFilter ).Entity = this.Entity;
                 }
 
+
                 component.Options = FilterOptions;
                 filterControls = component.CreateChildControls( FilteredEntityType, this, this.FilterMode );
             }

@@ -332,19 +332,13 @@ namespace Rock.Reporting.DataFilter.Person
         protected void gp_SelectItem( object sender, EventArgs e )
         {
             FilterField filterField = ( sender as Control ).FirstParentControlOfType<FilterField>();
-            var controls = filterField.Controls.OfType<WebControl>().ToList();
 
-            if ( filterField.Controls.Count < 9)
-            {
-                return;
-            }
-
-            GroupPicker groupPicker = controls.FirstOrDefault( a => a.CssClass.Contains( "js-group-picker" ) ) as GroupPicker;
-            RockCheckBox cbChildGroups = controls.FirstOrDefault( a => a.CssClass.Contains( "js-include-child-groups" ) ) as RockCheckBox;
-            RockCheckBox cbChildGroupsPlusDescendants = controls.FirstOrDefault( a => a.CssClass.Contains( "js-include-child-groups-descendants" ) ) as RockCheckBox;
-            RockCheckBox cbIncludeInactiveGroups = controls.FirstOrDefault( a => a.CssClass.Contains( "js-include-inactive-groups" ) ) as RockCheckBox;
-            RockCheckBox cbIncludeSelectedGroup = controls.FirstOrDefault( a => a.CssClass.Contains( "js-include-selected-groups" ) ) as RockCheckBox;
-            RockCheckBoxList cblRoles = controls.FirstOrDefault( a => a.CssClass.Contains( "js-roles" ) ) as RockCheckBoxList;
+            GroupPicker groupPicker = filterField.ControlsOfTypeRecursive<GroupPicker>().FirstOrDefault( a => a.HasCssClass( "js-group-picker" ) );
+            RockCheckBox cbChildGroups = filterField.ControlsOfTypeRecursive<RockCheckBox>().FirstOrDefault( a => a.HasCssClass( "js-include-child-groups" ) );
+            RockCheckBox cbChildGroupsPlusDescendants = filterField.ControlsOfTypeRecursive<RockCheckBox>().FirstOrDefault( a => a.HasCssClass( "js-include-child-groups-descendants" ) );
+            RockCheckBox cbIncludeInactiveGroups = filterField.ControlsOfTypeRecursive<RockCheckBox>().FirstOrDefault( a => a.HasCssClass( "js-include-inactive-groups" ) );
+            RockCheckBox cbIncludeSelectedGroup = filterField.ControlsOfTypeRecursive<RockCheckBox>().FirstOrDefault( a => a.HasCssClass( "js-include-selected-groups" ) );
+            RockCheckBoxList cblRoles = filterField.ControlsOfTypeRecursive<RockCheckBoxList>().FirstOrDefault( a => a.HasCssClass( "js-roles" ) );
 
             var rockContext = new RockContext();
 
@@ -582,7 +576,7 @@ namespace Rock.Reporting.DataFilter.Person
                     cbIncludeInactiveGroups.Checked = false;
                 }
 
-                gp_SelectItem( this, new EventArgs() );
+                gp_SelectItem( groupPicker, new EventArgs() );
 
                 string[] selectedRoleGuids = selectionValues[1].Split( new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries );
 

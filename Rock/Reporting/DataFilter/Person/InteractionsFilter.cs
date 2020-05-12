@@ -261,14 +261,12 @@ function() {
         protected void ddlInteractionChannel_SelectedIndexChanged( object sender, EventArgs e )
         {
             FilterField filterField = ( sender as Control ).FirstParentControlOfType<FilterField>();
-            var controls = filterField.Controls.OfType<WebControl>().ToArray();
 
-            var ddlInteractionChannel = controls.FirstOrDefault( a => a.CssClass.Contains( "js-interaction-channel" ) ) as RockDropDownList;
-            var ddlInteractionComponent = controls.FirstOrDefault( a => a.CssClass.Contains( "js-interaction-component" ) ) as RockDropDownList;
+            var ddlInteractionChannel = filterField.ControlsOfTypeRecursive<RockDropDownList>().FirstOrDefault( a => a.HasCssClass( "js-interaction-channel" ) );
+            var ddlInteractionComponent = filterField.ControlsOfTypeRecursive<RockDropDownList>().FirstOrDefault( a => a.HasCssClass( "js-interaction-component" ) );
 
             int ? interactionChannelId = ddlInteractionChannel.SelectedValueAsId();
             PopulateInteractionComponent( interactionChannelId, ddlInteractionComponent );
-
         }
 
         /// <summary>

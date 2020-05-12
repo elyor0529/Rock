@@ -188,7 +188,7 @@ function() {
             cblRole.ID = filterControl.ID + "_cblRole";
             filterControl.Controls.Add( cblRole );
 
-            PopulateGroupRolesCheckList( filterControl.Controls.OfType<WebControl>().ToArray() );
+            PopulateGroupRolesCheckList( filterControl );
 
             RockDropDownList ddlGroupMemberStatus = new RockDropDownList();
             ddlGroupMemberStatus.CssClass = "js-group-member-status";
@@ -220,19 +220,18 @@ function() {
         protected void groupTypePicker_SelectedIndexChanged( object sender, EventArgs e )
         {
             FilterField filterField = ( sender as Control ).FirstParentControlOfType<FilterField>();
-            var controls = filterField.Controls.OfType<WebControl>().ToArray();
 
-            PopulateGroupRolesCheckList( controls );
+            PopulateGroupRolesCheckList( filterField );
         }
 
         /// <summary>
         /// Populates the group roles.
         /// </summary>
-        /// <param name="controls">The controls.</param>
-        private void PopulateGroupRolesCheckList( WebControl[] controls )
+        /// <param name="filterField">The filter field.</param>
+        private void PopulateGroupRolesCheckList( FilterField filterField )
         {
-            var groupTypePicker = controls.FirstOrDefault( a => a.CssClass.Contains( "js-group-picker" ) ) as GroupPicker;
-            var cblRole = controls.FirstOrDefault( a => a.CssClass.Contains( "js-group-roles" ) ) as RockCheckBoxList;
+            var groupTypePicker = filterField.ControlsOfTypeRecursive<GroupTypePicker>().FirstOrDefault( a => a.HasCssClass( "js-group-picker" ) );
+            var cblRole = filterField.ControlsOfTypeRecursive<RockCheckBoxList>().FirstOrDefault( a => a.HasCssClass( "js-group-roles" ) );
             int? groupTypeId = groupTypePicker.SelectedValueAsId();
 
             if ( groupTypeId.HasValue )
@@ -307,12 +306,13 @@ function() {
             {
                 Guid groupTypeGuid = selectionValues[0].AsGuid();
                 var groupType = new GroupTypeService( new RockContext() ).Get( groupTypeGuid );
+                var groupTypePicker = ( controls[0] as GroupTypePicker );
                 if ( groupType != null )
                 {
-                    ( controls[0] as GroupTypePicker ).SetValue( groupType.Id );
+                    groupTypePicker.SetValue( groupType.Id );
                 }
 
-                groupTypePicker_SelectedIndexChanged( this, new EventArgs() );
+                groupTypePicker_SelectedIndexChanged( groupTypePicker, new EventArgs() );
 
                 string[] selectedRoleGuids = selectionValues[1].Split( new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries );
                 RockCheckBoxList cblRole = controls[1] as RockCheckBoxList;

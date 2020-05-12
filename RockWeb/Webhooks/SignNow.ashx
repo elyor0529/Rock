@@ -31,13 +31,13 @@ using Rock.Security;
 
 public class SignNow : IHttpHandler
 {
-    //private HttpRequest request;
-    //private HttpResponse response;
+    private HttpRequest request;
+    private HttpResponse response;
 
     public void ProcessRequest( HttpContext context )
     {
-        var request = context.Request;
-        var response = context.Response;
+        request = context.Request;
+        response = context.Response;
 
         response.ContentType = "text/plain";
 
