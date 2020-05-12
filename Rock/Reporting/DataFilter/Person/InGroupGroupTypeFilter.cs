@@ -230,7 +230,7 @@ function() {
         /// <param name="filterField">The filter field.</param>
         private void PopulateGroupRolesCheckList( FilterField filterField )
         {
-            var groupTypePicker = filterField.ControlsOfTypeRecursive<GroupTypePicker>().FirstOrDefault( a => a.HasCssClass( "js-group-picker" ) );
+            var groupTypePicker = filterField.ControlsOfTypeRecursive<GroupTypePicker>().FirstOrDefault( a => a.HasCssClass( "js-grouptype-picker" ) );
             var cblRole = filterField.ControlsOfTypeRecursive<RockCheckBoxList>().FirstOrDefault( a => a.HasCssClass( "js-group-roles" ) );
             int? groupTypeId = groupTypePicker.SelectedValueAsId();
 
