@@ -55,6 +55,7 @@
             this.lblAssemblyDateTime = new System.Windows.Forms.Label();
             this.label2 = new System.Windows.Forms.Label();
             this.cbEnsureCopyrightHeaders = new System.Windows.Forms.CheckBox();
+            this.entityCommand1 = new System.Data.Entity.Core.EntityClient.EntityCommand();
             this.SuspendLayout();
             // 
             // btnGenerate
@@ -304,6 +305,14 @@
             this.cbEnsureCopyrightHeaders.Text = "Ensure Copyright Headers";
             this.cbEnsureCopyrightHeaders.UseVisualStyleBackColor = true;
             // 
+            // entityCommand1
+            // 
+            this.entityCommand1.CommandTimeout = 0;
+            this.entityCommand1.CommandTree = null;
+            this.entityCommand1.Connection = null;
+            this.entityCommand1.EnablePlanCaching = true;
+            this.entityCommand1.Transaction = null;
+            // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
@@ -367,6 +376,7 @@
         private System.Windows.Forms.Label lblAssemblyDateTime;
         private System.Windows.Forms.Label label2;
         private System.Windows.Forms.CheckBox cbEnsureCopyrightHeaders;
+        private System.Data.Entity.Core.EntityClient.EntityCommand entityCommand1;
     }
 }
 
