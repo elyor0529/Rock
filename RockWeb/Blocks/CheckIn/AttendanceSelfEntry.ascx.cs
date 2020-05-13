@@ -125,11 +125,9 @@ ORDER BY [Text]",
         IsRequired = false,
         Order = 11,
         Key = AttributeKey.KnownRelationshipTypes )]
-    [CodeEditorField(
+    [UrlLinkField(
         "Redirect URL",
-        Description = "The URL to redirect the individual to when they check-in. The merge fields that are available includes 'PersonAliasGuid'.",
-        EditorMode = CodeEditorMode.Lava,
-        EditorTheme = CodeEditorTheme.Rock,
+        Description = "The URL to redirect the individual to when they check-in.",
         IsRequired = false,
         Order = 12,
         Key = AttributeKey.RedirectURL )]
@@ -144,7 +142,7 @@ ORDER BY [Text]",
         "Workflow",
         AllowMultiple = false,
         Key = AttributeKey.Workflow,
-        Description = "The optional workflow type to launch when a person is checked in. The primary person will be passed to the workflow as the entity. Additionally if the workflow type has any of the following attribute keys defined, those attribute values will also be set: FamilyPersonIds, OtherPersonIds.",
+        Description = "The optional workflow type to launch when a person is checked in. The primary person will be passed to the workflow as the entity. Additionally if the workflow type has any of the following attribute keys defined, those attribute values will also be set: GroupId, LocationId (if found), ScheduleId (if found), CheckedInPersonIds. (NOTE: If you want a workflow 'form' type of workflow use the Redirect URL setting instead.)",
         IsRequired = false,
         Order = 14 )]
     #region Messages Block Attribute Settings
@@ -480,40 +478,35 @@ ORDER BY [Text]",
             if ( person != null )
             {
                 GetData( person, rockContext );
-                var userLoginService = new Rock.Model.UserLoginService( new RockContext() );
-                var userLogins = userLoginService.GetByPersonId( person.Id )
-                    .Where( l => l.IsLockedOut != true )
-                    .ToList();
-                if ( userLogins.Any() )
-                {
-                    SetUnsecuredPersonIdentifier( person.PrimaryAlias.Guid );
-                }
+                OtherWatchers.ForEach( a => a.Selected = true );
             }
             else
             {
                 PrimaryWatcher = new Watcher();
-                PrimaryWatcher.NickName = tbFirstName.Text;
-                PrimaryWatcher.LastName = tbLastName.Text;
-                PrimaryWatcher.EmailAddress = tbEmail.Text;
-                if ( bpBirthDay.Visible )
-                {
-                    PrimaryWatcher.BirthDate = bpBirthDay.SelectedDate;
-                }
-
-                if ( pnlPhone.Visible )
-                {
-                    PrimaryWatcher.MobilePhoneNumber = pnbPhone.Number;
-                    PrimaryWatcher.MobileCountryCode = pnbPhone.CountryCode;
-                    PrimaryWatcher.IsMessagingEnabled = cbIsMessagingEnabled.Checked;
-                }
-
-                if ( acAddress.Visible )
-                {
-                    Location = Location ?? new Location();
-                    acAddress.GetValues( Location );
-                }
-
+                PrimaryWatcher.Guid = Guid.NewGuid();
                 OtherWatchers = new List<Watcher>();
+            }
+
+            PrimaryWatcher.NickName = tbFirstName.Text;
+            PrimaryWatcher.LastName = tbLastName.Text;
+            PrimaryWatcher.EmailAddress = tbEmail.Text;
+            PrimaryWatcher.Selected = true;
+            if ( bpBirthDay.Visible )
+            {
+                PrimaryWatcher.BirthDate = bpBirthDay.SelectedDate;
+            }
+
+            if ( pnlPhone.Visible )
+            {
+                PrimaryWatcher.MobilePhoneNumber = pnbPhone.Number;
+                PrimaryWatcher.MobileCountryCode = pnbPhone.CountryCode;
+                PrimaryWatcher.IsMessagingEnabled = cbIsMessagingEnabled.Checked;
+            }
+
+            if ( acAddress.Visible )
+            {
+                Location = Location ?? new Location();
+                acAddress.GetValues( Location );
             }
 
             ShowOtherWatcher();
@@ -534,7 +527,11 @@ ORDER BY [Text]",
             {
                 var personGuid = e.CommandArgument.ToString().AsGuid();
                 OtherWatchers.RemoveAll( a => a.Guid == personGuid );
+                BindRelationDropDown();
+                ddlRelation_SelectedIndexChanged( null, null );
+                BindCurrentlyListed();
             }
+
         }
 
         /// <summary>
@@ -561,31 +558,7 @@ ORDER BY [Text]",
         /// <param name="e">The <see cref="EventArgs" /> instance containing the event data.</param>
         protected void lbAddIndividual_Click( object sender, EventArgs e )
         {
-            var otherWatcher = new Watcher();
-            otherWatcher.Guid = Guid.NewGuid();
-            otherWatcher.NickName = tbOtherFirstName.Text;
-            otherWatcher.LastName = tbOtherLastName.Text;
-            otherWatcher.RelationshipType = ddlRelation.SelectedItem.Text;
-            otherWatcher.RelationshipTypeGuid = ddlRelation.SelectedValue.AsGuid();
-
-            if ( tbOtherEmail.Visible )
-            {
-                otherWatcher.EmailAddress = tbOtherEmail.Text;
-            }
-
-            if ( bpOtherBirthDay.Visible )
-            {
-                otherWatcher.BirthDate = bpOtherBirthDay.SelectedDate;
-            }
-
-            if ( pnOtherMobile.Visible )
-            {
-                otherWatcher.MobilePhoneNumber = pnOtherMobile.Number;
-                otherWatcher.MobileCountryCode = pnOtherMobile.CountryCode;
-                otherWatcher.IsMessagingEnabled = cbOtherMessagingEnabled.Checked;
-            }
-            OtherWatchers.Add( otherWatcher );
-
+            AddNewIndividual();
             ClearNewIndividualControl();
             BindRelationDropDown();
             ddlRelation_SelectedIndexChanged( null, null );
@@ -600,6 +573,38 @@ ORDER BY [Text]",
         protected void btnOtherNext_Click( object sender, EventArgs e )
         {
             var isLoggedIn = IsLoggedIn();
+            if ( tbOtherFirstName.Text.IsNotNullOrWhiteSpace() || tbOtherLastName.Text.IsNotNullOrWhiteSpace() )
+            {
+                List<string> errors = new List<string>();
+                if ( tbOtherFirstName.Text.IsNullOrWhiteSpace() )
+                {
+                    errors.Add( "First Name is required." );
+                }
+
+                if ( tbOtherLastName.Text.IsNullOrWhiteSpace() )
+                {
+                    errors.Add( "Last Name is required." );
+                }
+
+                if ( bpOtherBirthDay.Visible && GetAttributeValue( AttributeKey.OtherPersonBirthdayRequired ).AsBoolean() && !bpOtherBirthDay.SelectedDate.HasValue )
+                {
+                    errors.Add( "Birthday is required." );
+                }
+
+                if ( pnlOtherPhone.Visible && GetAttributeValue( AttributeKey.OtherPersonMobilePhoneRequired ).AsBoolean() && pnOtherMobile.Number.IsNullOrWhiteSpace() )
+                {
+                    errors.Add( "Mobile Phone is required." );
+                }
+
+                if ( errors.Any() )
+                {
+                    nbOtherWarning.Visible = true;
+                    nbOtherWarning.Title = string.Empty;
+                    nbOtherWarning.Text = errors.AsDelimited( "<br/>" );
+                    return;
+                }
+                AddNewIndividual();
+            }
 
             Person primaryPerson = null;
             if ( isLoggedIn )
@@ -607,22 +612,38 @@ ORDER BY [Text]",
                 var rockContext = new RockContext();
                 primaryPerson = GetLoggedInPerson( rockContext );
                 var family = primaryPerson.GetFamily( rockContext );
+
+                primaryPerson.NickName = PrimaryWatcher.NickName.FixCase();
+                primaryPerson.LastName = PrimaryWatcher.LastName.FixCase();
+
+                if ( PrimaryWatcher.BirthDate.HasValue )
+                {
+                    primaryPerson.SetBirthDate( PrimaryWatcher.BirthDate );
+                }
+
+                // Save the email address
+                if ( PrimaryWatcher.EmailAddress.IsNotNullOrWhiteSpace() )
+                {
+                    primaryPerson.Email = PrimaryWatcher.EmailAddress;
+                }
+
+                rockContext.SaveChanges();
+
+                // Save the mobile phone number
+                if ( PrimaryWatcher.MobilePhoneNumber.IsNotNullOrWhiteSpace() )
+                {
+                    SavePhoneNumber( primaryPerson.Id, PrimaryWatcher, rockContext );
+                }
+
+                SaveHomeAddress( rockContext, family );
+
                 AddOrUpdateOtherWatchers( rockContext, primaryPerson, family );
             }
 
             pnlOtherWatcher.Visible = false;
             if ( isLoggedIn )
             {
-                var selectedIndividuals = cblIndividuals.SelectedValuesAsInt;
                 ShowKnownIndividual();
-                if ( selectedIndividuals.Any() )
-                {
-                    cblIndividuals.SetValues( selectedIndividuals );
-                }
-                else
-                {
-                    cblIndividuals.SetValue( primaryPerson.Id );
-                }
             }
             else
             {
@@ -647,7 +668,7 @@ ORDER BY [Text]",
                 if ( txtPassword.Text.IsNullOrWhiteSpace() )
                 {
                     nbAccountWarning.Title = "Missing Information";
-                    nbAccountWarning.Text = "You forget to enter the password. Password is required in order to create account.";
+                    nbAccountWarning.Text = "Please type a password. A password is required if you would like to create an account.";
                     nbAccountWarning.NotificationBoxType = NotificationBoxType.Danger;
                     nbAccountWarning.Visible = true;
                     return;
@@ -656,7 +677,7 @@ ORDER BY [Text]",
                 if ( txtUserName.Text.IsNullOrWhiteSpace() )
                 {
                     nbAccountWarning.Title = "Missing Information";
-                    nbAccountWarning.Text = "You forget to enter the password. Password is required in order to create account.";
+                    nbAccountWarning.Text = "Please type a username. A username is required if you would like to create an account.";
                     nbAccountWarning.NotificationBoxType = NotificationBoxType.Danger;
                     nbAccountWarning.Visible = true;
                     return;
@@ -665,7 +686,7 @@ ORDER BY [Text]",
                 if ( new UserLoginService( rockContext ).GetByUserName( txtUserName.Text ) != null )
                 {
                     nbAccountWarning.Title = "Invalid Username";
-                    nbAccountWarning.Text = "The selected Username is already being used.  Please select a different Username";
+                    nbAccountWarning.Text = "The selected username is already being used. Please select a different username.";
                     nbAccountWarning.NotificationBoxType = NotificationBoxType.Danger;
                     nbAccountWarning.Visible = true;
                     return;
@@ -681,8 +702,8 @@ ORDER BY [Text]",
                 }
             }
             Person person = null;
-            var personService = new PersonService( rockContext );
             Group family = null;
+            var personService = new PersonService( rockContext );
             if ( PrimaryWatcher.Id != default( int ) )
             {
                 person = personService.Get( PrimaryWatcher.Id );
@@ -706,11 +727,14 @@ ORDER BY [Text]",
             else
             {
                 family = person.GetFamily( rockContext );
-                person.NickName = PrimaryWatcher.NickName;
-                person.LastName = PrimaryWatcher.LastName;
+                person.NickName = PrimaryWatcher.NickName.FixCase();
+                person.LastName = PrimaryWatcher.LastName.FixCase();
             }
 
-            person.SetBirthDate( PrimaryWatcher.BirthDate );
+            if ( PrimaryWatcher.BirthDate.HasValue )
+            {
+                person.SetBirthDate( PrimaryWatcher.BirthDate );
+            } 
 
             // Save the email address
             if ( PrimaryWatcher.EmailAddress.IsNotNullOrWhiteSpace() )
@@ -718,22 +742,12 @@ ORDER BY [Text]",
                 person.Email = PrimaryWatcher.EmailAddress;
             }
 
-
-            if ( family != null )
-            {
-                var familyGroupType = GroupTypeCache.Get( Rock.SystemGuid.GroupType.GROUPTYPE_FAMILY.AsGuid() );
-
-                var adultRole = familyGroupType
-                                .Roles
-                                .Where( a => a.Guid == Rock.SystemGuid.GroupRole.GROUPROLE_FAMILY_MEMBER_ADULT.AsGuid() )
-                                .FirstOrDefault();
-                PersonService.AddPersonToFamily( person, false, family.Id, adultRole.Id, rockContext );
-            }
-            else
+            if ( family == null )
             {
                 family = PersonService.SaveNewPerson( person, rockContext );
             }
 
+            rockContext.SaveChanges();
             PrimaryWatcher.Id = person.Id;
 
             // Save the mobile phone number
@@ -742,37 +756,7 @@ ORDER BY [Text]",
                 SavePhoneNumber( person.Id, PrimaryWatcher, rockContext );
             }
 
-            // Save the family address
-            var homeLocationType = DefinedValueCache.Get( Rock.SystemGuid.DefinedValue.GROUP_LOCATION_TYPE_HOME.AsGuid() );
-            if ( homeLocationType != null && Location != null && GetAttributeValue( AttributeKey.PrimaryPersonAddressShown ).AsBoolean() )
-            {
-                if ( Location.Street1.IsNotNullOrWhiteSpace() && Location.City.IsNotNullOrWhiteSpace() )
-                {
-                    Location = new LocationService( rockContext ).Get(
-                        Location.Street1, Location.Street2, Location.City, Location.State, Location.PostalCode, Location.Country, family, true );
-                }
-                else
-                {
-                    Location = null;
-                }
-
-                // Check to see if family has an existing home address
-                var groupLocation = family.GroupLocations
-                    .FirstOrDefault( l =>
-                        l.GroupLocationTypeValueId.HasValue &&
-                        l.GroupLocationTypeValueId.Value == homeLocationType.Id );
-
-                if ( Location != null )
-                {
-                    if ( groupLocation == null || groupLocation.LocationId != Location.Id )
-                    {
-                        // If family does not currently have a home address or it is different than the one entered, add a new address (move old address to prev)
-                        GroupService.AddNewGroupAddress( rockContext, family, homeLocationType.Guid.ToString(), Location, true, string.Empty, true, true );
-                    }
-                }
-
-                rockContext.SaveChanges();
-            }
+            SaveHomeAddress( rockContext, family );
 
             if ( isAccountRequired )
             {
@@ -797,10 +781,6 @@ ORDER BY [Text]",
 
             pnlAccount.Visible = false;
             ShowKnownIndividual();
-            foreach ( ListItem item in cblIndividuals.Items )
-            {
-                item.Selected = true;
-            }
         }
 
         #region Known Individual Panel Events
@@ -812,6 +792,14 @@ ORDER BY [Text]",
         /// <param name="e">The <see cref="EventArgs" /> instance containing the event data.</param>
         protected void lbAdjustWatchers_Click( object sender, EventArgs e )
         {
+            var memberIds = GetSelectedCheckedInPersonIds();
+            foreach ( var watcher in OtherWatchers )
+            {
+                watcher.Selected = memberIds.Contains( watcher.Id );
+            }
+
+            PrimaryWatcher.Selected = memberIds.Contains( PrimaryWatcher.Id );
+
             pnlKnownIndividual.Visible = false;
             ShowOtherWatcher();
         }
@@ -838,9 +826,11 @@ ORDER BY [Text]",
                         descendantGroupTypeIds.Contains( a.GroupTypeId ) )
                     .IsActive();
 
+            var primaryPerson = new PersonService( rockContext ).Get( PrimaryWatcher.Id );
+
+            Group attendanceGroup = null;
             if ( groups.Any() )
             {
-                Group attendanceGroup = null;
                 int? scheduleId = null;
                 int? locationId = null;
                 var campusCurrentDateTime = RockDateTime.Now;
@@ -874,20 +864,35 @@ ORDER BY [Text]",
                     }
                 }
 
-                if ( attendanceGroup == null )
+                if ( !scheduleId.HasValue )
+                {
+                    attendanceGroup = groups.Where( a => a.GroupLocations.Any() ).FirstOrDefault();
+                    if ( attendanceGroup != null )
+                    {
+                        locationId = attendanceGroup.GroupLocations.Select( a => a.LocationId ).FirstOrDefault();
+                    }
+                }
+
+                if ( !scheduleId.HasValue && !locationId.HasValue )
                 {
                     attendanceGroup = groups.First();
                 }
 
                 var attendanceService = new AttendanceService( rockContext );
-                var persons = new PersonService( rockContext ).GetListByIds( cblIndividuals.SelectedValuesAsInt );
+
+                var personIds = GetSelectedCheckedInPersonIds();
+
+                var persons = new PersonService( rockContext ).GetListByIds( personIds );
                 foreach ( var person in persons )
                 {
                     if ( person.PrimaryAliasId.HasValue )
                     {
                         var attendance = attendanceService.AddOrUpdate( person.PrimaryAliasId.Value, campusCurrentDateTime, attendanceGroup.Id, locationId, scheduleId, attendanceGroup.CampusId );
+
                     }
                 }
+
+                rockContext.SaveChanges();
 
                 Guid? workflowTypeGuid = GetAttributeValue( AttributeKey.Workflow ).AsGuidOrNull();
                 if ( workflowTypeGuid.HasValue )
@@ -897,19 +902,18 @@ ORDER BY [Text]",
                     {
                         try
                         {
-                            var otherPersonIds = OtherWatchers
-                                 .Where( a => a.RelationshipTypeGuid != Rock.SystemGuid.GroupRole.GROUPROLE_FAMILY_MEMBER_ADULT.AsGuid() &&
-                                              a.RelationshipTypeGuid != Rock.SystemGuid.GroupRole.GROUPROLE_FAMILY_MEMBER_CHILD.AsGuid() &&
-                                              cblIndividuals.SelectedValuesAsInt.Contains( a.Id ) )
-                                 .Select( a => a.Id )
-                                 .ToList();
-
-                            var familyPersonIds = cblIndividuals.SelectedValuesAsInt.Where( a => !otherPersonIds.Contains( a ) ).ToList();
-                            var primaryPerson = new PersonService( rockContext ).Get( PrimaryWatcher.Id );
                             // Create parameters
                             var parameters = new Dictionary<string, string>();
-                            parameters.Add( "FamilyPersonIds", familyPersonIds.AsDelimited( "," ) );
-                            parameters.Add( "OtherPersonIds", otherPersonIds.AsDelimited( "," ) );
+                            parameters.Add( "GroupId", attendanceGroup.Id.ToString() );
+                            if ( locationId.HasValue )
+                            {
+                                parameters.Add( "LocationId", locationId.Value.ToString() );
+                            }
+                            if ( scheduleId.HasValue )
+                            {
+                                parameters.Add( "ScheduleId", scheduleId.Value.ToString() );
+                            }
+                            parameters.Add( "CheckedInPersonIds", personIds.AsDelimited( "," ) );
 
                             primaryPerson.LaunchWorkflow( workflowTypeGuid, primaryPerson.FullName, parameters );
 
@@ -931,9 +935,17 @@ ORDER BY [Text]",
             string redirectUrl = GetAttributeValue( AttributeKey.RedirectURL );
             if ( redirectUrl.IsNotNullOrWhiteSpace() )
             {
-                var mergeFields = Rock.Lava.LavaHelper.GetCommonMergeFields( this.RockPage, this.CurrentPerson );
-                mergeFields.Add( "PersonAliasGuid", GetUnsecuredPersonIdentifier() );
-                var url = ResolveUrl( redirectUrl.ResolveMergeFields( mergeFields ) );
+                var family = primaryPerson.GetFamily( rockContext );
+                string url = redirectUrl + ( redirectUrl.Contains( "?" ) ? "&" : "?" ) + "PersonAliasGuid=" + GetUnsecuredPersonIdentifier().ToStringSafe();
+                url = url + "&PersonId=" + primaryPerson.Id;
+                if ( attendanceGroup != null )
+                {
+                    url = url + "&GroupId=" + attendanceGroup.Id;
+                }
+                if ( family != null )
+                {
+                    url = url + "&FamilyId=" + family.Id;
+                }
                 Response.Redirect( url, false );
                 Context.ApplicationInstance.CompleteRequest();
             }
@@ -957,10 +969,8 @@ ORDER BY [Text]",
             if ( IsLoggedIn() )
             {
                 Person person = GetLoggedInPerson();
-                SetUnsecuredPersonIdentifier( person.PrimaryAlias.Guid );
                 GetData( person );
                 ShowKnownIndividual();
-                cblIndividuals.SetValue( person.Id );
             }
             else
             {
@@ -1010,17 +1020,22 @@ ORDER BY [Text]",
             var mergeFields = Rock.Lava.LavaHelper.GetCommonMergeFields( this.RockPage, person );
             lKnownIndividualTitle.Text = GetAttributeValue( AttributeKey.KnownIndividualPanel1Title ).ResolveMergeFields( mergeFields );
             lKnownIndividualText.Text = GetAttributeValue( AttributeKey.KnownIndividualPanel1IntroText ).ResolveMergeFields( mergeFields );
-            lbAdjustWatchers.Visible = OtherWatchers
-                                                .Any( a => a.RelationshipTypeGuid != Rock.SystemGuid.GroupRole.GROUPROLE_FAMILY_MEMBER_ADULT.AsGuid()
-                                                            && a.RelationshipTypeGuid != Rock.SystemGuid.GroupRole.GROUPROLE_FAMILY_MEMBER_ADULT.AsGuid() );
             pnlKnownIndividual.Visible = true;
             btnCheckIn.Text = GetAttributeValue( AttributeKey.CheckinButtonText );
-            cblIndividuals.Items.Clear();
-            cblIndividuals.Items.Add( new ListItem( PrimaryWatcher.FullName, PrimaryWatcher.Id.ToString() ) );
-            foreach ( var otherWatcher in OtherWatchers )
-            {
-                cblIndividuals.Items.Add( new ListItem( string.Format( "{0} <span class='subtitle'>{1}</span>", otherWatcher.FullName, otherWatcher.RelationshipType ), otherWatcher.Id.ToString() ) );
-            }
+            var familyMembers = OtherWatchers
+                            .Where( a => a.RelationshipTypeGuid == Rock.SystemGuid.GroupRole.GROUPROLE_FAMILY_MEMBER_ADULT.AsGuid()
+                                    || a.RelationshipTypeGuid == Rock.SystemGuid.GroupRole.GROUPROLE_FAMILY_MEMBER_CHILD.AsGuid() )
+                            .ToList();
+            familyMembers.Insert( 0, PrimaryWatcher );
+
+            var otherMembers = OtherWatchers
+                            .Where( a => a.RelationshipTypeGuid != Rock.SystemGuid.GroupRole.GROUPROLE_FAMILY_MEMBER_ADULT.AsGuid()
+                                    && a.RelationshipTypeGuid != Rock.SystemGuid.GroupRole.GROUPROLE_FAMILY_MEMBER_CHILD.AsGuid() )
+                            .ToList();
+            rptFamilyMembers.DataSource = familyMembers;
+            rptFamilyMembers.DataBind();
+            rptOtherMembers.DataSource = otherMembers;
+            rptOtherMembers.DataBind();
         }
 
         /// <summary>
@@ -1044,6 +1059,7 @@ ORDER BY [Text]",
         /// </summary>
         private void ShowOtherWatcher()
         {
+            nbOtherWarning.Visible = false;
             lPanel2Title.Text = GetAttributeValue( AttributeKey.UnknownIndividualPanel2Title );
             lPanel2Text.Text = GetAttributeValue( AttributeKey.UnknownIndividualPanel2IntroText );
             pnlPrimaryWatcher.Visible = false;
@@ -1257,7 +1273,10 @@ ORDER BY [Text]",
                     person.LastName = watcher.LastName;
                 }
 
-                person.SetBirthDate( watcher.BirthDate );
+                if ( watcher.BirthDate.HasValue )
+                {
+                    person.SetBirthDate( watcher.BirthDate );
+                }
 
                 // Save the email address
                 if ( watcher.EmailAddress.IsNotNullOrWhiteSpace() )
@@ -1279,7 +1298,15 @@ ORDER BY [Text]",
                             primaryPerson.MaritalStatusValueId = marriedMartialStatusValueId;
                         }
                     }
-                    PersonService.AddPersonToFamily( person, notInPrimaryFamily, family.Id, roleId, rockContext );
+
+                    if ( notInPrimaryFamily )
+                    {
+                        PersonService.AddPersonToFamily( person, true, family.Id, roleId, rockContext );
+                    }
+                    else
+                    {
+                        rockContext.SaveChanges();
+                    }
                 }
                 else
                 {
@@ -1307,10 +1334,10 @@ ORDER BY [Text]",
                         var roleId = familyGroupType.Roles.FirstOrDefault( r => r.Guid == Rock.SystemGuid.GroupRole.GROUPROLE_FAMILY_MEMBER_ADULT.AsGuid() ).Id;
 
                         PersonService.AddPersonToFamily( person, isNew, newFamilyId.Value, roleId, rockContext );
-
-                        var relationshipTypeId = configuredKnownRelationships.FirstOrDefault( a => a.Guid == watcher.RelationshipTypeGuid ).Id;
-                        groupMemberService.CreateKnownRelationship( primaryPerson.Id, person.Id, relationshipTypeId );
                     }
+
+                    var relationshipTypeId = configuredKnownRelationships.FirstOrDefault( a => a.Guid == watcher.RelationshipTypeGuid ).Id;
+                    groupMemberService.CreateKnownRelationship( primaryPerson.Id, person.Id, relationshipTypeId );
                 }
 
                 watcher.Id = person.Id;
@@ -1323,6 +1350,37 @@ ORDER BY [Text]",
             }
         }
 
+        /// <summary>
+        /// Add the new individual
+        /// </summary>
+        private void AddNewIndividual()
+        {
+            var otherWatcher = new Watcher();
+            otherWatcher.Guid = Guid.NewGuid();
+            otherWatcher.NickName = tbOtherFirstName.Text;
+            otherWatcher.LastName = tbOtherLastName.Text;
+            otherWatcher.RelationshipType = ddlRelation.SelectedItem.Text;
+            otherWatcher.RelationshipTypeGuid = ddlRelation.SelectedValue.AsGuid();
+
+            if ( tbOtherEmail.Visible )
+            {
+                otherWatcher.EmailAddress = tbOtherEmail.Text;
+            }
+
+            if ( bpOtherBirthDay.Visible )
+            {
+                otherWatcher.BirthDate = bpOtherBirthDay.SelectedDate;
+            }
+
+            if ( pnOtherMobile.Visible )
+            {
+                otherWatcher.MobilePhoneNumber = pnOtherMobile.Number;
+                otherWatcher.MobileCountryCode = pnOtherMobile.CountryCode;
+                otherWatcher.IsMessagingEnabled = cbOtherMessagingEnabled.Checked;
+            }
+            otherWatcher.Selected = true;
+            OtherWatchers.Add( otherWatcher );
+        }
 
         #endregion Other Watchers Panel
 
@@ -1359,7 +1417,6 @@ ORDER BY [Text]",
         private void SetUnsecuredPersonIdentifier( Guid personAliasGuid )
         {
             HttpCookie httpcookie = new HttpCookie( ROCK_UNSECUREDPERSONIDENTIFIER );
-            httpcookie.Expires = RockDateTime.Now.AddMinutes( 480 );
             httpcookie.Value = personAliasGuid.ToString();
             Response.Cookies.Add( httpcookie );
         }
@@ -1414,6 +1471,44 @@ ORDER BY [Text]",
         }
 
         /// <summary>
+        /// Save the home address.
+        /// </summary>
+        private void SaveHomeAddress( RockContext rockContext, Group family )
+        {
+            // Save the family address
+            var homeLocationType = DefinedValueCache.Get( Rock.SystemGuid.DefinedValue.GROUP_LOCATION_TYPE_HOME.AsGuid() );
+            if ( homeLocationType != null && Location != null && GetAttributeValue( AttributeKey.PrimaryPersonAddressShown ).AsBoolean() )
+            {
+                if ( Location.Street1.IsNotNullOrWhiteSpace() && Location.City.IsNotNullOrWhiteSpace() )
+                {
+                    Location = new LocationService( rockContext ).Get(
+                        Location.Street1, Location.Street2, Location.City, Location.State, Location.PostalCode, Location.Country, family, true );
+                }
+                else
+                {
+                    Location = null;
+                }
+
+                // Check to see if family has an existing home address
+                var groupLocation = family.GroupLocations
+                    .FirstOrDefault( l =>
+                        l.GroupLocationTypeValueId.HasValue &&
+                        l.GroupLocationTypeValueId.Value == homeLocationType.Id );
+
+                if ( Location != null )
+                {
+                    if ( groupLocation == null || groupLocation.LocationId != Location.Id )
+                    {
+                        // If family does not currently have a home address or it is different than the one entered, add a new address (move old address to prev)
+                        GroupService.AddNewGroupAddress( rockContext, family, homeLocationType.Guid.ToString(), Location, true, string.Empty, true, true );
+                    }
+                }
+
+                rockContext.SaveChanges();
+            }
+        }
+
+        /// <summary>
         /// Creates a new family group.
         /// </summary>
         /// <param name="familyGroupTypeId">The family group type identifier.</param>
@@ -1438,6 +1533,9 @@ ORDER BY [Text]",
             var family = person.GetFamily( rockContext );
 
             PrimaryWatcher = new Watcher( person, Rock.SystemGuid.GroupRole.GROUPROLE_FAMILY_MEMBER_ADULT.AsGuid(), string.Empty );
+            PrimaryWatcher.Selected = true;
+
+            SetUnsecuredPersonIdentifier( person.PrimaryAlias.Guid );
 
             var familyMembers = personService
                 .GetFamilyMembers( family, person.Id )
@@ -1464,6 +1562,26 @@ ORDER BY [Text]",
             }
         }
 
+        /// <summary>
+        /// Gets the selected Checked-In Members
+        /// </summary>
+        private List<int> GetSelectedCheckedInPersonIds()
+        {
+            var members = new List<int>();
+            var familyMembers = hfSelectedFamilyMembers.Value.SplitDelimitedValues().AsIntegerList();
+            if ( familyMembers != null )
+            {
+                members.AddRange( familyMembers );
+            }
+
+            var otherMembers = hfSelectedOtherMembers.Value.SplitDelimitedValues().AsIntegerList();
+            if ( otherMembers != null )
+            {
+                members.AddRange( otherMembers );
+            }
+
+            return members;
+        }
 
         #endregion
 
@@ -1560,6 +1678,14 @@ ORDER BY [Text]",
             /// True/False.
             /// </value>
             public bool IsMessagingEnabled { get; set; }
+
+            /// <summary>
+            /// Gets or sets if selected.
+            /// </summary>
+            /// <value>
+            /// True/False.
+            /// </value>
+            public bool Selected { get; set; }
 
             /// <summary>
             /// Gets  full name of the person.

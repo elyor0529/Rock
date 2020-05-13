@@ -15,1245 +15,921 @@
 // </copyright>
 //
 using System;
-using System.ComponentModel;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Threading;
 using System.Data.Entity;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
-using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
-using System.Web.UI;
-using System.Web.UI.WebControls;
-using Microsoft.AspNet.SignalR;
-
+using System.Web;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Rock;
-using Rock.Attribute;
 using Rock.Data;
 using Rock.Model;
 using Rock.Security;
-using Rock.Web.Cache;
-using Rock.Web.UI;
-using Rock.Web.UI.Controls;
 using Rock.Transactions;
-using System.Web;
-using System.Diagnostics;
-using System.Collections.Concurrent;
-using System.IO;
+using Rock.Web.Cache;
 
-namespace RockWeb.Blocks.Crm
+namespace Rock.Tests.Integration.Crm
 {
-    [DisplayName( "Bulk Update" )]
-    [Category( "CRM" )]
-    [Description( "Used for updating information about several individuals at once." )]
-    [SecurityAction( "EditConnectionStatus", "The roles and/or users that can edit the connection status for the selected persons." )]
-    [SecurityAction( "EditRecordStatus", "The roles and/or users that can edit the record status for the selected persons." )]
-
-    #region Block Attributes
-
-    [AttributeCategoryField(
-        "Attribute Categories",
-        Key = AttributeKey.AttributeCategories,
-        Description = "The person attribute categories to display and allow bulk updating",
-        AllowMultiple = true,
-        EntityTypeName = "Rock.Model.Person",
-        IsRequired = false,
-        Order = 0 )]
-    [IntegerField(
-        "Display Count",
-        Key = AttributeKey.DisplayCount,
-        Description = "The initial number of individuals to display prior to expanding the list",
-        DefaultIntegerValue = 0,
-        IsRequired = false,
-        Order = 1 )]
-    [WorkflowTypeField(
-        "Workflow Types",
-        Key = AttributeKey.WorkflowTypes,
-        Description = "The workflows to make available for bulk updating.",
-        AllowMultiple = true,
-        IsRequired = false,
-        Order = 2 )]
-    [IntegerField(
-        "Task Count",
-        Key = AttributeKey.TaskCount,
-        Description = "The number of concurrent tasks to use when performing updates. If left blank then it will be determined automatically.",
-        DefaultIntegerValue = 0,
-        IsRequired = false,
-        Order = 3 )]
-    [IntegerField(
-        "Batch Size",
-        Key = AttributeKey.BatchSize,
-        Description = "The maximum number of items in each processing batch. If not specified, this value will be automatically determined.",
-        DefaultIntegerValue = 0,
-        IsRequired = false,
-        Order = 4 )]
-
-    #endregion Block Attributes
-
-    public partial class BulkUpdate : RockBlock
+    /// <summary>
+    /// Create and manage test data for the Rock CRM module.
+    /// </summary>
+    [TestClass]
+    public class PersonBulkUpdateProcessorTests
     {
-        #region Keys
+        private const string AlishaMarblePersonGuid = "69DC0FDC-B451-4303-BD91-EF17C0015D23";
+        private const string TedDeckerPersonGuid = "8FEDC6EE-8630-41ED-9FC5-C7157FD1EAA4";
+        private const string BillMarblePersonGuid = "1EA811BB-3118-42D1-B020-32A82BC8081A";
+
+        #region Tests
+
+        #region Person Properties
 
         /// <summary>
-        /// Keys for block attributes
+        /// Verify that the test data in the target database is valid.
         /// </summary>
-        private static class AttributeKey
+        [TestMethod]
+        public void BulkUpdateProcessor_UpdateCampus_UpdatesSelectedRecords()
         {
-            public const string AttributeCategories = "AttributeCategories";
-            public const string DisplayCount = "DisplayCount";
-            public const string WorkflowTypes = "WorkflowTypes";
-            public const string TaskCount = "TaskCount";
-            public const string BatchSize = "BatchSize";
+            var campusMainGuid = "76882AE3-1CE8-42A6-A2B6-8C0B29CF8CF8";
+            var campusStepGuid = "089844AF-6310-4C20-9434-A845F982B0C5";
+
+            var dataContext = new RockContext();
+            var personService = new PersonService( dataContext );
+
+            var campusMainId = CampusCache.GetId( campusMainGuid.AsGuid() );
+            var campusStepId = CampusCache.GetId( campusStepGuid.AsGuid() );
+
+            var qryCampus = personService.Queryable()
+                .Where( x => x.PrimaryCampusId == campusMainId )
+                .OrderBy( x => x.Id )
+                .Take( 100 );
+
+            BulkUpdateProcessor_UpdateAndRevertPersonProperty(
+                qryCampus,
+                PersonBulkUpdateProcessor.FieldNames.Campus,
+                campusMainId,
+                campusStepId );
         }
 
-        // <summary>
-        // Keys for the page parameters
-        // </summary>
-        private static class ParameterKey
+        [TestMethod]
+        public void BulkUpdateProcessor_UpdateCommunicationPreference_UpdatesSelectedRecords()
         {
-            public const string Set = "Set";
+            var dataContext = new RockContext();
+            var personService = new PersonService( dataContext );
+
+            var qryPreference = personService.Queryable()
+                .Where( x => x.CommunicationPreference == CommunicationType.Email )
+                .OrderBy( x => x.Id )
+                .Take( 100 );
+
+            BulkUpdateProcessor_UpdateAndRevertPersonProperty(
+                qryPreference,
+                PersonBulkUpdateProcessor.FieldNames.CommunicationPreference,
+                CommunicationType.Email,
+                CommunicationType.PushNotification );
         }
 
-        #endregion Keys
+        [TestMethod]
+        public void BulkUpdateProcessor_UpdateEmailPreference_UpdatesSelectedRecords()
+        {
+            var dataContext = new RockContext();
+            var personService = new PersonService( dataContext );
 
-        #region Fields
+            var qryPreference = personService.Queryable()
+                .Where( x => x.EmailPreference == EmailPreference.EmailAllowed )
+                .OrderBy( x => x.Id )
+                .Take( 100 );
 
-        DateTime _gradeTransitionDate = new DateTime( RockDateTime.Today.Year, 6, 1 );
-        bool _canEditConnectionStatus = false;
-        bool _canEditRecordStatus = true;
+            BulkUpdateProcessor_UpdateAndRevertPersonProperty(
+                qryPreference,
+                PersonBulkUpdateProcessor.FieldNames.EmailPreference,
+                EmailPreference.EmailAllowed,
+                EmailPreference.DoNotEmail );
+        }
+
+        [TestMethod]
+        public void BulkUpdateProcessor_UpdateEmailActive_UpdatesSelectedRecords()
+        {
+            var dataContext = new RockContext();
+            var personService = new PersonService( dataContext );
+
+            var qryInactiveEmails = personService.Queryable()
+                .Where( x => x.IsEmailActive == true )
+                .OrderBy( x => x.Id )
+                .Take( 100 );
+
+            BulkUpdateProcessor_UpdateAndRevertPersonProperty(
+                qryInactiveEmails,
+                PersonBulkUpdateProcessor.FieldNames.EmailIsActive,
+                true,
+                false );
+        }
+
+        [TestMethod]
+        public void BulkUpdateProcessor_UpdateEmailNote_UpdatesSelectedRecords()
+        {
+            var dataContext = new RockContext();
+            var personService = new PersonService( dataContext );
+
+            var qryNotes = personService.Queryable()
+                .Where( x => x.EmailNote == null )
+                .OrderBy( x => x.Id )
+                .Take( 100 );
+
+            BulkUpdateProcessor_UpdateAndRevertPersonProperty(
+                qryNotes,
+                PersonBulkUpdateProcessor.FieldNames.EmailNote,
+                null,
+                "Test Note" );
+        }
+
+        [TestMethod]
+        public void BulkUpdateProcessor_UpdateGender_UpdatesSelectedRecords()
+        {
+            var dataContext = new RockContext();
+            var personService = new PersonService( dataContext );
+
+            var qryMales = personService.Queryable()
+                .Where( x => x.Gender == Gender.Female )
+                .OrderBy( x => x.Id )
+                .Take( 100 );
+
+            BulkUpdateProcessor_UpdateAndRevertPersonProperty(
+                qryMales,
+                PersonBulkUpdateProcessor.FieldNames.Gender,
+                Gender.Female,
+                Gender.Male );
+        }
+
+        [TestMethod]
+        public void BulkUpdateProcessor_UpdateGraduationYear_UpdatesSelectedRecords()
+        {
+            var dataContext = new RockContext();
+            var personService = new PersonService( dataContext );
+
+            // Get a set of candidates that includes Ben Jones (graduating in 2030).
+            var qryGraduationYear = personService.Queryable()
+                .Where( x => x.GraduationYear == 2030 )
+                .OrderBy( x => x.Id )
+                .Take( 100 );
+
+            BulkUpdateProcessor_UpdateAndRevertPersonProperty(
+                qryGraduationYear,
+                PersonBulkUpdateProcessor.FieldNames.GraduationYear,
+                2030,
+                2021 );
+        }
+
+        [TestMethod]
+        public void BulkUpdateProcessor_UpdateRecordStatus_UpdatesSelectedRecords()
+        {
+            var dataContext = new RockContext();
+            var personService = new PersonService( dataContext );
+
+            var statusActiveId = DefinedValueCache.Get( SystemGuid.DefinedValue.PERSON_RECORD_STATUS_ACTIVE ).Id;
+            var statusPendingId = DefinedValueCache.Get( SystemGuid.DefinedValue.PERSON_RECORD_STATUS_PENDING ).Id;
+
+            var qryStatus = personService.Queryable()
+                .Where( x => x.RecordStatusValueId == statusActiveId )
+                .Take( 100 );
+
+            BulkUpdateProcessor_UpdateAndRevertPersonProperty(
+                qryStatus,
+                PersonBulkUpdateProcessor.FieldNames.RecordStatus,
+                statusActiveId,
+                statusPendingId );
+        }
+
+        [TestMethod]
+        public void BulkUpdateProcessor_UpdateReviewReasonNote_UpdatesSelectedRecords()
+        {
+            var dataContext = new RockContext();
+            var personService = new PersonService( dataContext );
+
+            var qryNotes = personService.Queryable()
+                .Where( x => x.ReviewReasonNote == null )
+                .Take( 100 );
+
+            BulkUpdateProcessor_UpdateAndRevertPersonProperty(
+                qryNotes,
+                PersonBulkUpdateProcessor.FieldNames.ReviewReasonNote,
+                null,
+                "Test Review Note" );
+        }
+
+        [TestMethod]
+        public void BulkUpdateProcessor_UpdateMaritalStatus_UpdatesSelectedRecords()
+        {
+            var dataContext = new RockContext();
+            var personService = new PersonService( dataContext );
+
+            var statusSingleId = DefinedValueCache.Get( SystemGuid.DefinedValue.PERSON_MARITAL_STATUS_SINGLE ).Id;
+            var statusMarriedId = DefinedValueCache.Get( SystemGuid.DefinedValue.PERSON_MARITAL_STATUS_MARRIED ).Id;
+
+            var qryStatus = personService.Queryable()
+                .Where( x => x.MaritalStatusValueId == statusSingleId )
+                .Take( 100 );
+
+            BulkUpdateProcessor_UpdateAndRevertPersonProperty(
+                qryStatus,
+                PersonBulkUpdateProcessor.FieldNames.MaritalStatus,
+                statusSingleId,
+                statusMarriedId );
+        }
+
+        [TestMethod]
+        public void BulkUpdateProcessor_UpdateReviewReason_UpdatesSelectedRecords()
+        {
+            var dataContext = new RockContext();
+            var personService = new PersonService( dataContext );
+
+            var statusSelfInactivated = DefinedValueCache.Get( SystemGuid.DefinedValue.PERSON_REVIEW_REASON_SELF_INACTIVATED ).Id;
+
+            var qryStatus = personService.Queryable()
+                .Where( x => x.ReviewReasonValueId == null )
+                .Take( 100 );
+
+            BulkUpdateProcessor_UpdateAndRevertPersonProperty(
+                qryStatus,
+                PersonBulkUpdateProcessor.FieldNames.ReviewReason,
+                null,
+                statusSelfInactivated );
+        }
+
+        [TestMethod]
+        public void BulkUpdateProcessor_UpdateSuffix_UpdatesSelectedRecords()
+        {
+            var personSuffixJrGuid = "0D0081EB-2017-43A7-81D6-AFB3A2A1EB35";
+
+            var dataContext = new RockContext();
+            var personService = new PersonService( dataContext );
+
+            var suffixJrId = DefinedValueCache.Get( personSuffixJrGuid ).Id;
+
+            var qrySuffix = personService.Queryable()
+                .Where( x => x.SuffixValueId == null )
+                .Take( 100 );
+
+            BulkUpdateProcessor_UpdateAndRevertPersonProperty(
+                qrySuffix,
+                PersonBulkUpdateProcessor.FieldNames.Suffix,
+                null,
+                suffixJrId );
+        }
+
+        [TestMethod]
+        public void BulkUpdateProcessor_UpdateSystemNote_UpdatesSelectedRecords()
+        {
+            var dataContext = new RockContext();
+            var personService = new PersonService( dataContext );
+
+            var qryNotes = personService.Queryable()
+                .Where( x => x.SystemNote == null )
+                .Take( 100 );
+
+            BulkUpdateProcessor_UpdateAndRevertPersonProperty(
+                qryNotes,
+                PersonBulkUpdateProcessor.FieldNames.SystemNote,
+                null,
+                "Test System Note" );
+        }
+
+        [TestMethod]
+        public void BulkUpdateProcessor_UpdateTitle_UpdatesSelectedRecords()
+        {
+            var personTitleMrGuid = "A91ECCFC-5861-4EC1-AAB0-A45093A94485";
+            var personTitleMrsGuid = "1EAD48D9-8045-4904-8999-4695DE8E410D";
+
+            var dataContext = new RockContext();
+            var personService = new PersonService( dataContext );
+
+            var titleMrId = DefinedValueCache.Get( personTitleMrGuid ).Id;
+            var titleMrsId = DefinedValueCache.Get( personTitleMrsGuid ).Id;
+
+            var qryTitle = personService.Queryable()
+                .Where( x => x.TitleValueId == titleMrId )
+                .Take( 100 );
+
+            BulkUpdateProcessor_UpdateAndRevertPersonProperty(
+                qryTitle,
+                PersonBulkUpdateProcessor.FieldNames.Title,
+                titleMrId,
+                titleMrsId );
+        }
+
+        [TestMethod]
+        public void BulkUpdateProcessor_UpdatePersonAttributeAllergy_UpdatesSelectedRecords()
+        {
+            var attributeAllergy = AttributeCache.Get( SystemGuid.Attribute.PERSON_ALLERGY );
+            var categoryChildhoodInformationGuid = "752DC692-836E-4A3E-B670-4325CD7724BF";
+
+            var allergyText = "Broccoli and peas!";
+
+            var dataContext = new RockContext();
+            var personService = new PersonService( dataContext );
+
+            // Get the set of people that currently have the Attribute Set to this value.
+            var qryCandidates = personService.Queryable()
+                .OrderBy( x => x.Id )
+                .Take( 100 );
+
+            var processor = GetDefaultProcessor();
+
+            processor.PersonAttributeCategories.Add( categoryChildhoodInformationGuid.AsGuid() );
+
+            BulkUpdateProcessor_UpdateAndRevertPersonAttribute(
+                qryCandidates,
+                dataContext,
+                attributeAllergy.Key,
+                null,
+                allergyText );
+        }
+
+        /// <summary>
+        /// Bulk updates the specified person property for the set of people in the supplied query to a new value, and then reverses the process to restore the original value.
+        /// </summary>
+        /// <param name="personQuery"></param>
+        /// <param name="fieldCode"></param>
+        /// <param name="originalValue"></param>
+        /// <param name="updatedValue"></param>
+        private void BulkUpdateProcessor_UpdateAndRevertPersonProperty( IQueryable<Person> personQuery, string fieldCode, object originalValue, object updatedValue )
+        {
+            // Make sure that the query implements...
+            // * NoTracking() so the results are refreshed for each execution.
+            // * OrderBy so that the result sets are predictable.
+            personQuery = personQuery.AsNoTracking();
+
+            if ( !typeof( IOrderedQueryable<Person> ).IsAssignableFrom( personQuery.Expression.Type ) )
+            {
+                throw new Exception( "An ordered query is required." );
+            }
+
+            var processor = GetDefaultProcessor();
+
+            // Get the list of target people.
+            var beforeUpdatePersonIdList = personQuery.Select( x => x.Id ).ToList();
+
+            Assert.IsTrue( beforeUpdatePersonIdList.Any(), "No target people found" );
+
+            Trace.WriteLine( $"{beforeUpdatePersonIdList.Count} target records found." );
+
+            processor.PersonIdList = beforeUpdatePersonIdList;
+
+            // Set property value to updated value and verify.
+            processor.SetNewFieldValue( fieldCode, updatedValue );
+
+            processor.Process();
+
+            // Verify that none of the processed records have the old value.
+            var afterUpdatePersonIdList = personQuery.Where( x => beforeUpdatePersonIdList.Contains( x.Id ) ).Select( x => x.Id ).ToList();
+
+            Assert.IsFalse( afterUpdatePersonIdList.Any(), "One or more target records were not updated." );
+
+            // Set the property to the original value and verify.
+            processor.SetNewFieldValue( fieldCode, originalValue );
+
+            processor.Process();
+
+            afterUpdatePersonIdList = personQuery.Select( x => x.Id ).ToList();
+
+            // Verify that we have the same candidate records as we started with, else the bulk update has not correctly reverted to the original value.
+            CollectionAssert.AreEquivalent( beforeUpdatePersonIdList, afterUpdatePersonIdList );
+        }
+
+        /// <summary>
+        /// Bulk updates the specified person property for the set of people in the supplied query to a new value, and then reverses the process to restore the original value.
+        /// </summary>
+        /// <param name="personQuery"></param>
+        /// <param name="fieldCode"></param>
+        /// <param name="originalValue"></param>
+        /// <param name="updatedValue"></param>
+        private void BulkUpdateProcessor_UpdateAndRevertPersonAttribute( IQueryable<Person> personQuery, RockContext dataContext, string attributeKey, string originalValue, string updatedValue )
+        {
+            // Make sure that the query implements...
+            // * NoTracking() so the results are refreshed for each execution.
+            // * OrderBy so that the result sets are predictable.
+            personQuery = personQuery.AsNoTracking();
+
+            if ( !typeof( IOrderedQueryable<Person> ).IsAssignableFrom( personQuery.Expression.Type ) )
+            {
+                throw new Exception( "An ordered query is required." );
+            }
+
+            var processor = GetDefaultProcessor();
+
+            var person = new Person();
+
+            person.LoadAttributes();
+
+            var attributeCategory = person.Attributes[attributeKey].Categories.FirstOrDefault();
+
+            processor.PersonAttributeCategories.Add( attributeCategory.Guid );
+
+            // Get the list of target people.
+            var targetPersonIdList = personQuery.Select( x => x.Id ).ToList();
+
+            Assert.IsTrue( targetPersonIdList.Any(), "No target people found" );
+
+            Trace.WriteLine( $"{targetPersonIdList.Count} target records found." );
+
+            processor.PersonIdList = targetPersonIdList;
+
+            // Set property value to updated value and verify.
+            processor.UpdatePersonAttributeValues.AddOrReplace( attributeKey, updatedValue.ToStringSafe() );
+
+            processor.Process();
+
+            // Verify that none of the processed records have the old value.
+            // Note that this does not work if the value is empty because the WhereAttributeValue predicate (incorrectly) returns no records.
+
+            List<int> afterUpdatePersonIdList;
+
+            if ( originalValue != null )
+            {
+                var qryCandidatesWithOriginalValue = personQuery
+                        .Where( x => targetPersonIdList.Contains( x.Id ) )
+                        .WhereAttributeValue( dataContext, attributeKey, originalValue )
+                        .OrderBy( x => x.Id );
+
+                afterUpdatePersonIdList = qryCandidatesWithOriginalValue.Select( x => x.Id ).ToList();
+
+                Assert.IsFalse( qryCandidatesWithOriginalValue.Any(), "One or more target records were not updated." );
+            }
+
+            // Verify that all of the processed records have the new value.
+            var qryCandidatesWithUpdatedValue = personQuery
+                    .Where( x => targetPersonIdList.Contains( x.Id ) )
+                    .WhereAttributeValue( dataContext, attributeKey, updatedValue )
+                    .OrderBy( x => x.Id );
+
+            afterUpdatePersonIdList = qryCandidatesWithUpdatedValue.Select( x => x.Id ).ToList();
+
+            CollectionAssert.AreEquivalent( targetPersonIdList, afterUpdatePersonIdList );
+
+            // Set the property back to the original value and verify.
+            processor.UpdatePersonAttributeValues.AddOrReplace( attributeKey, originalValue.ToStringSafe() );
+
+            processor.Process();
+
+            // Verify that none of the target records now have the updated value.
+            afterUpdatePersonIdList = qryCandidatesWithUpdatedValue.Select( x => x.Id ).ToList();
+
+            Assert.IsFalse( afterUpdatePersonIdList.Any(), "Some target records were not reverted to original values." );
+        }
 
         #endregion
 
-        #region Properties
+        #region Following
 
-        /// <summary>
-        /// This holds the reference to the RockMessageHub SignalR Hub context.
-        /// </summary>
-        private IHubContext HubContext = GlobalHost.ConnectionManager.GetHubContext<RockMessageHub>();
-
-        private List<Individual> Individuals { get; set; }
-        private bool ShowAllIndividuals { get; set; }
-        private int? GroupId { get; set; }
-        private List<string> SelectedFields { get; set; }
-        private List<Guid> AttributeCategories { get; set; }
-
-        #endregion
-
-        #region Base Control Methods
-
-        protected override void OnInit( EventArgs e )
+        [TestMethod]
+        public void BulkUpdateProcessor_AddRemoveFollowing_CanRoundtrip()
         {
-            base.OnInit( e );
-
-            RockPage.AddScriptLink( "~/Scripts/jquery.signalR-2.2.0.min.js", false );
-
-            var personEntityTypeId = EntityTypeCache.Get( typeof( Rock.Model.Person ) ).Id;
-
-            dvpTitle.DefinedTypeId = DefinedTypeCache.Get( new Guid( Rock.SystemGuid.DefinedType.PERSON_TITLE ) ).Id;
-            dvpConnectionStatus.DefinedTypeId = DefinedTypeCache.Get( new Guid( Rock.SystemGuid.DefinedType.PERSON_CONNECTION_STATUS ) ).Id;
-            dvpMaritalStatus.DefinedTypeId = DefinedTypeCache.Get( new Guid( Rock.SystemGuid.DefinedType.PERSON_MARITAL_STATUS ) ).Id;
-            dvpSuffix.DefinedTypeId = DefinedTypeCache.Get( new Guid( Rock.SystemGuid.DefinedType.PERSON_SUFFIX ) ).Id;
-            dvpRecordStatus.DefinedTypeId = DefinedTypeCache.Get( new Guid( Rock.SystemGuid.DefinedType.PERSON_RECORD_STATUS ) ).Id;
-            dvpInactiveReason.DefinedTypeId = DefinedTypeCache.Get( new Guid( Rock.SystemGuid.DefinedType.PERSON_RECORD_STATUS_REASON ) ).Id;
-            dvpReviewReason.DefinedTypeId = DefinedTypeCache.Get( new Guid( Rock.SystemGuid.DefinedType.PERSON_REVIEW_REASON ) ).Id;
-
-            _canEditConnectionStatus = UserCanAdministrate || IsUserAuthorized( "EditConnectionStatus" );
-            dvpConnectionStatus.Visible = _canEditConnectionStatus;
-
-            _canEditRecordStatus = UserCanAdministrate || IsUserAuthorized( "EditRecordStatus" );
-            dvpRecordStatus.Visible = _canEditRecordStatus;
-
-            rlbWorkFlowType.Items.Clear();
-            var guidList = GetAttributeValue( AttributeKey.WorkflowTypes ).SplitDelimitedValues().AsGuidList();
-            using ( var rockContext = new RockContext() )
-            {
-                var workflowTypeService = new WorkflowTypeService( rockContext );
-                foreach ( var workflowType in new WorkflowTypeService( rockContext )
-                    .Queryable().AsNoTracking()
-                    .Where( t => guidList.Contains( t.Guid ) && t.IsActive == true )
-                    .ToList() )
-                {
-                    if ( workflowType.IsAuthorized( Authorization.VIEW, CurrentPerson ) )
-                    {
-                        ListItem item = new ListItem( workflowType.Name, workflowType.Id.ToString() );
-                        rlbWorkFlowType.Items.Add( item );
-                    }
-                }
-            }
-
-            if ( rlbWorkFlowType.Items.Count <= 0 )
-            {
-                pwWorkFlows.Visible = false;
-            }
-
-            ddlTagList.Items.Clear();
-            ddlTagList.DataTextField = "Name";
-            ddlTagList.DataValueField = "Id";
-            var currentPersonAliasIds = CurrentPerson.Aliases.Select( a => a.Id ).ToList();
-
-            new TagService( new RockContext() ).Queryable()
-                                            .Where( t =>
-                                                        t.EntityTypeId == personEntityTypeId
-                                                        && ( t.OwnerPersonAliasId == null || currentPersonAliasIds.Contains( t.OwnerPersonAliasId.Value ) ) )
-                                            .OrderByDescending( t => t.OwnerPersonAliasId.HasValue )
-                                            .ThenBy( t => t.Name )
-                                            .ToList()
-                                            .ForEach( t =>
-                                            {
-                                                if ( t.IsAuthorized( Authorization.TAG, CurrentPerson ) )
-                                                {
-                                                    ListItem item = new ListItem( t.Name, t.Id.ToString() );
-                                                    item.Attributes["OptionGroup"] = t.OwnerPersonAliasId == null ? "Organization Tags" : "Personal Tags";
-                                                    ddlTagList.Items.Add( item );
-                                                }
-                                            } );
-            ddlTagList.Items.Insert( 0, "" );
-            ScriptManager.RegisterStartupScript( ddlGradePicker, ddlGradePicker.GetType(), "grade-selection-" + BlockId.ToString(), ddlGradePicker.GetJavascriptForYearPicker( ypGraduation ), true );
-
-            ddlNoteType.Items.Clear();
-            var noteTypes = NoteTypeCache.GetByEntity( personEntityTypeId, string.Empty, string.Empty, true );
-            foreach ( var noteType in noteTypes )
-            {
-                if ( noteType.UserSelectable && noteType.IsAuthorized( Rock.Security.Authorization.EDIT, CurrentPerson ) )
-                {
-                    ddlNoteType.Items.Add( new ListItem( noteType.Name, noteType.Id.ToString() ) );
-                }
-            }
-            pwNote.Visible = ddlNoteType.Items.Count > 0;
-
-            string script = @"
-    $('a.remove-all-individuals').click(function( e ){
-        e.preventDefault();
-        Rock.dialogs.confirm('Are you sure you want to remove all of the individuals from this update?', function (result) {
-            if (result) {
-                window.location = e.target.href ? e.target.href : e.target.parentElement.href;
-            }
-        });
-    });
-";
-            ScriptManager.RegisterStartupScript( lbRemoveAllIndividuals, lbRemoveAllIndividuals.GetType(), "confirm-remove-all-" + BlockId.ToString(), script, true );
-
-            // This will cause this script to be injected upon each partial-postback because the script is
-            // needed due to the fact that the controls are dynamically changing (added/removed) during each
-            // partial postback.  Don't try to 'fix' this unless you're going to re-engineer this section. :)
-            script = string.Format( @"
-
-    // Add the 'bulk-item-selected' class to form-group of any item selected after postback
-    $( 'label.control-label' ).has( 'span.js-select-item > i.fa-check-circle-o').each( function() {{
-        $(this).closest('.form-group').addClass('bulk-item-selected');
-    }});
-
-    // Handle the click event for any label that contains a 'js-select-span' span
-    $( 'label.control-label' ).has( 'span.js-select-item').click( function() {{
-
-        var formGroup = $(this).closest('.form-group');
-        var selectIcon = formGroup.find('span.js-select-item').children('i');
-
-        // Toggle the selection of the form group        
-        formGroup.toggleClass('bulk-item-selected');
-        var enabled = formGroup.hasClass('bulk-item-selected');
-            
-        // Set the selection icon to show selected
-        selectIcon.toggleClass('fa-check-circle-o', enabled);
-        selectIcon.toggleClass('fa-circle-o', !enabled);
-
-        // Checkboxes needs special handling
-        var checkboxes = formGroup.find(':checkbox');
-        if ( checkboxes.length ) {{
-            $(checkboxes).each(function() {{
-                if (this.nodeName === 'INPUT' ) {{
-                    $(this).toggleClass('aspNetDisabled', !enabled);
-                    $(this).prop('disabled', !enabled);
-                    $(this).closest('label').toggleClass('text-muted', !enabled);
-                    $(this).closest('.form-group').toggleClass('bulk-item-selected', enabled);
-                }}
-            }});
-        }}
-
-        // Enable/Disable the controls
-        formGroup.find('.form-control').each( function() {{
-
-            $(this).toggleClass('aspNetDisabled', !enabled);
-            $(this).prop('disabled', !enabled);
-
-            // Grade/Graduation needs special handling
-            if ( $(this).prop('id') == '{1}' ) {{
-                $('#{2}').toggleClass('aspNetDisabled', !enabled);
-                $('#{2}').prop('disabled', !enabled);
-                $('#{2}').closest('.form-group').toggleClass('bulk-item-selected', enabled)
-            }}
-
-        }});
-        
-        // Update the hidden field with the client id of each selected control, (if client id ends with '_hf' as in the case of multi-select attributes, strip the ending '_hf').
-        var newValue = '';
-        $('div.bulk-item-selected').each(function( index ) {{
-            $(this).find('[id]').each(function() {{
-                var re = /_hf$/;
-                var ctrlId = $(this).prop('id').replace(re, '');
-                newValue += ctrlId + '|';
-            }});
-        }});
-        $('#{0}').val(newValue);            
-
-    }});
-", hfSelectedItems.ClientID, ddlGradePicker.ClientID, ypGraduation.ClientID );
-            ScriptManager.RegisterStartupScript( hfSelectedItems, hfSelectedItems.GetType(), "select-items-" + BlockId.ToString(), script, true );
-
-            ddlGroupAction.SelectedValue = "Add";
-            ddlGroupMemberStatus.BindToEnum<GroupMemberStatus>();
-
-            this.BlockUpdated += Block_BlockUpdated;
-            this.AddConfigurationUpdateTrigger( upPanel );
-        }
-
-        /// <summary>
-        /// Restores the view-state information from a previous user control request that was saved by the <see cref="M:System.Web.UI.UserControl.SaveViewState" /> method.
-        /// </summary>
-        /// <param name="savedState">An <see cref="T:System.Object" /> that represents the user control state to be restored.</param>
-        protected override void LoadViewState( object savedState )
-        {
-            base.LoadViewState( savedState );
-
-            Individuals = ViewState["Individuals"] as List<Individual>;
-            if ( Individuals == null )
-            {
-                Individuals = new List<Individual>();
-            }
-
-            ShowAllIndividuals = ViewState["ShowAllIndividuals"] as bool? ?? false;
-            GroupId = ViewState["GroupId"] as int?;
-
-            string selectedItemsValue = Request.Form[hfSelectedItems.UniqueID];
-            if ( !string.IsNullOrWhiteSpace( selectedItemsValue ) )
-            {
-                SelectedFields = selectedItemsValue.Split( new char[] { '|' }, StringSplitOptions.RemoveEmptyEntries ).ToList();
-            }
-            else
-            {
-                SelectedFields = new List<string>();
-            }
-
-            AttributeCategories = ViewState["AttributeCategories"] as List<Guid>;
-            if ( AttributeCategories == null )
-            {
-                AttributeCategories = new List<Guid>();
-            }
-        }
-
-        /// <summary>
-        /// Raises the <see cref="E:System.Web.UI.Control.Load" /> event.
-        /// </summary>
-        /// <param name="e">The <see cref="T:System.EventArgs" /> object that contains the event data.</param>
-        protected override void OnLoad( EventArgs e )
-        {
-            base.OnLoad( e );
+            // Developer settings.
+            const bool addData = true;
+            const bool removeData = true;
 
             var rockContext = new RockContext();
 
-            if ( !Page.IsPostBack )
+            var personAliasEntityType = EntityTypeCache.Get( typeof( Rock.Model.PersonAlias ) );
+
+            int personAliasEntityTypeId = personAliasEntityType.Id;
+
+            var personService = new PersonService( rockContext );
+            var personAliasService = new PersonAliasService( rockContext );
+            var followingService = new FollowingService( rockContext );
+
+            var followedPerson = personService.Get( AlishaMarblePersonGuid.AsGuid() );
+
+            var paQry = personAliasService.Queryable();
+
+            var currentFollowerPersonQuery = followingService.Queryable()
+                .AsNoTracking()
+                .Where( f => f.EntityTypeId == personAliasEntityTypeId
+                             && f.PersonAlias.Id == followedPerson.PrimaryAliasId )
+                .Join( paQry, f => f.EntityId, p => p.Id, ( f, p ) => new { PersonAlias = p } )
+                .Select( p => p.PersonAlias.PersonId )
+                .Distinct();
+
+            var initialFollowerPersonIdList = currentFollowerPersonQuery.ToList();
+
+            var candidatePersonQuery = personService.Queryable()
+                .AsNoTracking()
+                .Where( x => x.Gender == Gender.Female )
+                .Where( x => !initialFollowerPersonIdList.Contains( x.Id ) )
+                .OrderBy( x => x.Id )
+                .Take( 100 );
+
+            var candidatePersonIdList = candidatePersonQuery.Select( x => x.Id ).ToList();
+
+            // Initialize the processor
+            List<int> afterUpdatePersonIdList;
+
+            var processor = GetDefaultProcessor();
+
+            processor.UpdateFollowingPersonId = followedPerson.Id;
+            processor.PersonIdList = candidatePersonIdList;
+
+            // Add new followers and verify.
+            if ( addData )
             {
-                AttributeCategories = GetAttributeValue( AttributeKey.AttributeCategories ).SplitDelimitedValues().AsGuidList();
-                cpCampus.Campuses = CampusCache.All();
-                Individuals = new List<Individual>();
-                SelectedFields = new List<string>();
-
-                int? setId = PageParameter( ParameterKey.Set ).AsIntegerOrNull();
-                if ( setId.HasValue )
-                {
-                    var selectedPersonsQry = new EntitySetService( rockContext ).GetEntityQuery<Person>( setId.Value );
-
-                    // Get the people selected
-                    foreach ( var person in selectedPersonsQry
-                        .Select( p => new
-                        {
-                            p.Id,
-                            FullName = p.NickName + " " + p.LastName
-                        } ) )
-                    {
-                        Individuals.Add( new Individual( person.Id, person.FullName ) );
-                    }
-                }
-
-                SetControlSelection();
-                BuildAttributes( rockContext, true );
-            }
-            else
-            {
-                SetControlSelection();
-                BuildAttributes( rockContext );
-
-                if ( ddlGroupAction.SelectedValue == "Update" )
-                {
-                    SetControlSelection( ddlGroupRole, "Role" );
-                    SetControlSelection( ddlGroupMemberStatus, "Member Status" );
-                }
-
-                BuildGroupAttributes( rockContext );
-            }
-
-        }
-
-        /// <summary>
-        /// Saves any user control view-state changes that have occurred since the last page postback.
-        /// </summary>
-        /// <returns>
-        /// Returns the user control's current view state. If there is no view state associated with the control, it returns null.
-        /// </returns>
-        protected override object SaveViewState()
-        {
-            ViewState["Individuals"] = Individuals;
-            ViewState["ShowAllIndividuals"] = ShowAllIndividuals;
-            ViewState["GroupId"] = GroupId;
-            ViewState["AttributeCategories"] = AttributeCategories;
-            return base.SaveViewState();
-        }
-
-        /// <summary>
-        /// Raises the <see cref="E:System.Web.UI.Control.PreRender" /> event.
-        /// </summary>
-        /// <param name="e">An <see cref="T:System.EventArgs" /> object that contains the event data.</param>
-        protected override void OnPreRender( EventArgs e )
-        {
-            if ( pnlEntry.Visible )
-            {
-                BindIndividuals();
-            }
-        }
-
-        #endregion
-
-        #region Events
-
-        /// <summary>
-        /// Handles the SelectPerson event of the ppAddPerson control.
-        /// </summary>
-        /// <param name="sender">The source of the event.</param>
-        /// <param name="e">The <see cref="EventArgs" /> instance containing the event data.</param>
-        protected void ppAddPerson_SelectPerson( object sender, EventArgs e )
-        {
-            if ( ppAddPerson.PersonId.HasValue )
-            {
-                if ( !Individuals.Any( r => r.PersonId == ppAddPerson.PersonId.Value ) )
-                {
-                    var Person = new PersonService( new RockContext() ).Get( ppAddPerson.PersonId.Value );
-                    if ( Person != null )
-                    {
-                        Individuals.Add( new Individual( Person ) );
-                        ShowAllIndividuals = true;
-                    }
-                }
-            }
-        }
-
-        /// <summary>
-        /// Handles the ItemCommand event of the rptIndividuals control.
-        /// </summary>
-        /// <param name="source">The source of the event.</param>
-        /// <param name="e">The <see cref="RepeaterCommandEventArgs" /> instance containing the event data.</param>
-        protected void rptIndividuals_ItemCommand( object source, RepeaterCommandEventArgs e )
-        {
-            int personId = int.MinValue;
-            if ( int.TryParse( e.CommandArgument.ToString(), out personId ) )
-            {
-                Individuals = Individuals.Where( r => r.PersonId != personId ).ToList();
-            }
-        }
-
-        /// <summary>
-        /// Handles the Click event of the lbShowAllIndividuals control.
-        /// </summary>
-        /// <param name="sender">The source of the event.</param>
-        /// <param name="e">The <see cref="EventArgs" /> instance containing the event data.</param>
-        protected void lbShowAllIndividuals_Click( object sender, EventArgs e )
-        {
-            ShowAllIndividuals = true;
-        }
-
-        /// <summary>
-        /// Handles the Click event of the lbRemoveAllIndividuals control.
-        /// </summary>
-        /// <param name="sender">The source of the event.</param>
-        /// <param name="e">The <see cref="EventArgs" /> instance containing the event data.</param>
-        protected void lbRemoveAllIndividuals_Click( object sender, EventArgs e )
-        {
-            Individuals = new List<Individual>();
-        }
-
-        /// <summary>
-        /// Handles the ServerValidate event of the valIndividuals control.
-        /// </summary>
-        /// <param name="source">The source of the event.</param>
-        /// <param name="args">The <see cref="ServerValidateEventArgs" /> instance containing the event data.</param>
-        protected void valIndividuals_ServerValidate( object source, ServerValidateEventArgs args )
-        {
-            args.IsValid = Individuals.Any();
-        }
-
-        /// <summary>
-        /// Handles the ServerValidate event of the cvSelection control.
-        /// </summary>
-        /// <param name="source">The source of the event.</param>
-        /// <param name="args">The <see cref="ServerValidateEventArgs"/> instance containing the event data.</param>
-        protected void cvSelection_ServerValidate( object source, ServerValidateEventArgs args )
-        {
-            int? groupId = gpGroup.SelectedValue.AsIntegerOrNull();
-            int? tagId = ddlTagList.SelectedValue.AsIntegerOrNull();
-            int? workFlowTypeId = rlbWorkFlowType.SelectedValue.AsIntegerOrNull();
-            args.IsValid = SelectedFields.Any() || !string.IsNullOrWhiteSpace( tbNote.Text ) || ( groupId.HasValue && groupId > 0 ) || tagId.HasValue || workFlowTypeId.HasValue;
-        }
-
-        /// <summary>
-        /// Handles the Click event of the btnConfirm control.
-        /// </summary>
-        /// <param name="sender">The source of the event.</param>
-        /// <param name="e">The <see cref="EventArgs"/> instance containing the event data.</param>
-        protected void btnComplete_Click( object sender, EventArgs e )
-        {
-            if ( !Page.IsValid )
-            {
-                return;
-            }
-
-            var processor = this.GetProcessorForCurrentConfiguration( HttpContext.Current.Request );
-
-            var changes = processor.GetPendingActionSummary();
-
-            StringBuilder sb = new StringBuilder();
-            sb.AppendFormat( "<p>You are about to make the following updates to {0} individuals:</p>", Individuals.Count().ToString( "N0" ) );
-            sb.AppendLine();
-
-            sb.AppendLine( "<ul>" );
-            changes.ForEach( c => sb.AppendFormat( "<li>{0}</li>\n", c ) );
-            sb.AppendLine( "</ul>" );
-
-            sb.AppendLine( "<p>Please confirm that you want to make these updates.</p>" );
-
-            phConfirmation.Controls.Add( new LiteralControl( sb.ToString() ) );
-
-            pnlEntry.Visible = false;
-            pnlConfirm.Visible = true;
-
-            ScriptManager.RegisterStartupScript( Page, this.GetType(), "ScrollPage", "ResetScrollPosition();", true );
-        }
-
-        /// <summary>
-        /// Handles the Click event of the btnBack control.
-        /// </summary>
-        /// <param name="sender">The source of the event.</param>
-        /// <param name="e">The <see cref="EventArgs"/> instance containing the event data.</param>
-        protected void btnBack_Click( object sender, EventArgs e )
-        {
-            pnlEntry.Visible = true;
-            pnlConfirm.Visible = false;
-        }
-
-        private long _errorCount;
-
-        /// <summary>
-        /// Handles the Click event of the btnConfirm control.
-        /// </summary>
-        /// <param name="sender">The source of the event.</param>
-        /// <param name="e">The <see cref="EventArgs"/> instance containing the event data.</param>
-        protected void btnConfirm_Click( object sender, EventArgs e )
-        {
-            ProcessBulkUpdate();
-        }
-
-        /// <summary>
-        /// Handles the BlockUpdated event of the control.
-        /// </summary>
-        /// <param name="sender">The source of the event.</param>
-        /// <param name="e">The <see cref="EventArgs"/> instance containing the event data.</param>
-        protected void Block_BlockUpdated( object sender, EventArgs e )
-        {
-            AttributeCategories = GetAttributeValue( AttributeKey.AttributeCategories ).SplitDelimitedValues().AsGuidList();
-            phAttributesCol1.Controls.Clear();
-            phAttributesCol2.Controls.Clear();
-            BuildAttributes( new RockContext(), true );
-        }
-
-        /// <summary>
-        /// Handles the SelectedIndexChanged event of the ddlRecordStatus control.
-        /// </summary>
-        /// <param name="sender">The source of the event.</param>
-        /// <param name="e">The <see cref="EventArgs"/> instance containing the event data.</param>
-        protected void ddlRecordStatus_SelectedIndexChanged( object sender, EventArgs e )
-        {
-            dvpInactiveReason.Visible = ( dvpRecordStatus.SelectedValueAsInt() == DefinedValueCache.Get( new Guid( Rock.SystemGuid.DefinedValue.PERSON_RECORD_STATUS_INACTIVE ) ).Id );
-            tbInactiveReasonNote.Visible = dvpInactiveReason.Visible;
-        }
-
-        /// <summary>
-        /// Handles the SelectedIndexChanged event of the ddlGroupAction control.
-        /// </summary>
-        /// <param name="sender">The source of the event.</param>
-        /// <param name="e">The <see cref="EventArgs"/> instance containing the event data.</param>
-        protected void ddlGroupAction_SelectedIndexChanged( object sender, EventArgs e )
-        {
-            SetGroupControls();
-        }
-
-        /// <summary>
-        /// Handles the SelectItem event of the gpGroup control.
-        /// </summary>
-        /// <param name="sender">The source of the event.</param>
-        /// <param name="e">The <see cref="EventArgs"/> instance containing the event data.</param>
-        protected void gpGroup_SelectItem( object sender, EventArgs e )
-        {
-            SetGroupControls();
-        }
-
-        #endregion
-
-        #region Private Methods
-
-        /// <summary>
-        /// Process the bulk update.
-        /// </summary>
-        private void ProcessBulkUpdate()
-        {
-            if ( !Page.IsValid )
-            {
-                return;
-            }
-
-            var processor = this.GetProcessorForCurrentConfiguration( HttpContext.Current.Request );
-
-            // Define a background task for the bulk update process, because it may take considerable time.
-            var task = new Task( () =>
-            {
-                _errorCount = 0;
-
-                // Handle status notifications from the bulk processor.
-                processor.StatusUpdated += ( s, args ) =>
-                {
-                    var client = HubContext.Clients.Client( hfConnectionId.Value );
-
-                    if ( client == null )
-                    {
-                        return;
-                    }
-
-                    if ( args.UpdateType == PersonBulkUpdateProcessor.ProcessorStatusUpdateTypeSpecifier.Progress )
-                    {
-                        // Progress Update
-                        client.bulkUpdateProgress( args.ProcessedCount.ToString(), args.TotalCount.ToString( "n0" ) );
-                    }
-                    else if ( args.UpdateType == PersonBulkUpdateProcessor.ProcessorStatusUpdateTypeSpecifier.Error )
-                    {
-                        // Error Message
-                        client.exportStatus( args.StatusMessage, false );
-                    }
-                    else
-                    {
-                        // Status Update
-                        client.bulkUpdateStatus( args.StatusMessage, args.StatusDetail );
-                    }
-                };
-
-                // Wait for the browser to finish loading.
-                Task.Delay( 1000 ).Wait();
+                processor.UpdateFollowingAction = PersonBulkUpdateProcessor.FollowingChangeActionSpecifier.Add;
 
                 processor.Process();
-            } );
 
-            pnlConfirm.Visible = false;
-            pnlProcessing.Visible = true;
+                // Verify that all of the candidate people are now followers.
+                afterUpdatePersonIdList = currentFollowerPersonQuery.ToList();
 
-            // Start the background processing task and complete this request.
-            // The task will continue to run until complete, delivering client status notifications via the SignalR hub.
-            task.Start();
+                CollectionAssert.IsSubsetOf( candidatePersonIdList, afterUpdatePersonIdList, "One or more candidates are not followers of the target." );
+            }
+
+            // Remove new followers and verify.
+            if ( removeData )
+            {
+                processor.UpdateFollowingAction = PersonBulkUpdateProcessor.FollowingChangeActionSpecifier.Remove;
+
+                processor.Process();
+
+                // Verify that the followers have reverted to the initial set.
+                afterUpdatePersonIdList = currentFollowerPersonQuery.ToList();
+
+                CollectionAssert.AreEquivalent( initialFollowerPersonIdList, afterUpdatePersonIdList, "Some candidates were not removed as followers." );
+            }
         }
 
-        /// <summary>
-        /// Creates a new instance of the bulk update processor configured with the current page settings.
-        /// </summary>
-        /// <returns></returns>
-        private PersonBulkUpdateProcessor GetProcessorForCurrentConfiguration( HttpRequest request )
+        [TestMethod]
+        public void BulkUpdateProcessor_AddRemoveTags_CanRoundtrip()
         {
-            // Get an identifier for the current client request.
-            string clientId = request.ServerVariables["HTTP_X_FORWARDED_FOR"];
+            // Developer settings.
+            const bool addData = true;
+            const bool removeData = true;
+            const int candidateCount = 100;
 
-            if ( string.IsNullOrWhiteSpace( clientId ) )
-            {
-                clientId = request.ServerVariables["REMOTE_ADDR"];
-            }
+            const string TagStaff = "0E70E933-F07A-4DA2-B696-368378E8F6FE";
 
-            var processor = new PersonBulkUpdateProcessor();
-
-            processor.InstanceId = clientId;
-
-            processor.TaskCount = GetAttributeValue( AttributeKey.TaskCount ).AsInteger();
-            processor.BatchSize = GetAttributeValue( AttributeKey.BatchSize ).AsInteger();
-
-            // Set the list of individuals to process.
-            processor.PersonIdList = this.Individuals.Select( x => x.PersonId ).ToList();
-
-            // Get Individual Settings
-            processor.UpdateTitleValueId = dvpTitle.SelectedValueAsInt();
-            processor.UpdateSuffixValueId = dvpSuffix.SelectedValueAsInt();
-
-            if ( _canEditConnectionStatus )
-            {
-                processor.UpdateConnectionStatusValueId = dvpConnectionStatus.SelectedValueAsInt();
-            }
-
-            if ( _canEditRecordStatus )
-            {
-                processor.UpdateRecordStatusValueId = dvpRecordStatus.SelectedValueAsInt();
-                processor.UpdateInactiveReasonId = dvpInactiveReason.SelectedValueAsInt();
-                processor.UpdateInactiveReasonNote = tbInactiveReasonNote.Text;
-            }
-
-            processor.UpdateGender = ddlGender.SelectedValue.ConvertToEnum<Gender>();
-            processor.UpdateMaritalStatusValueId = dvpMaritalStatus.SelectedValueAsInt();
-
-            if ( ypGraduation.SelectedYear.HasValue )
-            {
-                processor.UpdateGraduationYear = ypGraduation.SelectedYear.Value;
-            }
-
-            processor.UpdateCampusId = cpCampus.SelectedCampusId;
-
-            if ( !string.IsNullOrWhiteSpace( ddlIsEmailActive.SelectedValue ) )
-            {
-                processor.UpdateEmailActive = ( ddlIsEmailActive.SelectedValue == "Active" );
-            }
-
-            processor.UpdateCommunicationPreference = ddlCommunicationPreference.SelectedValueAsEnumOrNull<CommunicationType>();
-            processor.UpdateEmailPreference = ddlEmailPreference.SelectedValue.ConvertToEnumOrNull<EmailPreference>();
-
-            processor.UpdateEmailNote = tbEmailNote.Text;
-
-            processor.UpdateReviewReasonValueId = dvpReviewReason.SelectedValueAsInt();
-            processor.UpdateSystemNote = tbSystemNote.Text;
-            processor.UpdateReviewReasonNote = tbReviewReasonNote.Text;
-
-            // Get Person Attributes
             var rockContext = new RockContext();
 
-            processor.PersonAttributeCategories = this.AttributeCategories;
-            processor.UpdatePersonAttributeValues = this.GetPersonAttributeValueSettings( rockContext );
+            var personEntityType = EntityTypeCache.Get( typeof( Rock.Model.Person ) );
 
-            // Notes
-            if ( ddlNoteType.SelectedItem != null
-                 && !string.IsNullOrWhiteSpace( tbNote.Text )
-                 && CurrentPerson != null )
+            var tagService = new TagService( rockContext );
+
+            var tagStaff = tagService.Get( TagStaff.AsGuid() );
+
+            var taggedItemService = new TaggedItemService( rockContext );
+
+            var personService = new PersonService( rockContext );
+
+            var personQuery = personService.Queryable();
+
+            var currentTaggedPersonQuery = taggedItemService.Queryable()
+                .AsNoTracking()
+                .Where( x => x.TagId == tagStaff.Id )
+                .Join( personQuery, f => f.EntityGuid, p => p.Guid, ( f, p ) => new { Person = p } )
+                .Select( p => p.Person.Id )
+                .Distinct();
+
+            var initialTaggedPersonIdList = currentTaggedPersonQuery.ToList();
+
+            var candidatePersonQuery = personService.Queryable()
+                .AsNoTracking()
+                .Where( x => x.Gender == Gender.Female )
+                .Where( x => !initialTaggedPersonIdList.Contains( x.Id ) )
+                .OrderBy( x => x.Id )
+                .Take( candidateCount );
+
+            var candidatePersonIdList = candidatePersonQuery.Select( x => x.Id ).ToList();
+
+            // Initialize the processor
+            List<int> afterUpdatePersonIdList;
+
+            var processor = GetDefaultProcessor();
+
+            processor.UpdateTagId = tagStaff.Id;
+            processor.PersonIdList = candidatePersonIdList;
+
+            // Add new tag and verify.
+            if ( addData )
             {
-                processor.UpdateNoteAction = PersonBulkUpdateProcessor.NoteChangeActionSpecifier.Add;
+                processor.UpdateTagAction = PersonBulkUpdateProcessor.TagChangeActionSpecifier.Add;
+                processor.InstanceId = "Add_Tags";
 
-                processor.UpdateNoteText = tbNote.Text;
-                processor.UpdateNoteIsAlert = cbIsAlert.Checked;
+                processor.Process();
 
-                processor.UpdateNoteIsPrivate = cbIsPrivate.Checked;
-                processor.UpdateNoteTypeId = ddlNoteType.SelectedValueAsId();
+                // Verify that all of the candidate people are now tagged.
+                afterUpdatePersonIdList = currentTaggedPersonQuery.ToList();
+
+                CollectionAssert.IsSubsetOf( candidatePersonIdList, afterUpdatePersonIdList, "One or more candidates are not tagged." );
             }
 
-            // Group Membership
-            int groupId = gpGroup.SelectedValue.AsInteger();
-
-            processor.UpdateGroupId = groupId;
-            processor.UpdateGroupRoleId = ddlGroupRole.SelectedValueAsInt();
-            processor.UpdateGroupStatus = ddlGroupMemberStatus.SelectedValueAsEnum<GroupMemberStatus>();
-
-            var groupAction = ddlGroupAction.SelectedValue;
-
-            processor.UpdateGroupAttributeValues = GetGroupMemberAttributeValues( rockContext, groupId, groupAction );
-
-            if ( groupId > 0 )
+            // Remove new tag and verify.
+            if ( removeData )
             {
-                if ( groupAction == "Add" )
-                {
-                    processor.UpdateGroupAction = PersonBulkUpdateProcessor.GroupChangeActionSpecifier.Add;
-                }
-                else if ( groupAction == "Remove" )
-                {
-                    processor.UpdateGroupAction = PersonBulkUpdateProcessor.GroupChangeActionSpecifier.Remove;
-                }
-                else if ( groupAction == "Update" )
-                {
-                    processor.UpdateGroupAction = PersonBulkUpdateProcessor.GroupChangeActionSpecifier.Modify;
-                }
-            }
+                processor.UpdateTagAction = PersonBulkUpdateProcessor.TagChangeActionSpecifier.Remove;
+                processor.InstanceId = "Remove_Tags";
 
-            // New Following
-            if ( SelectedFields.Contains( ddlFollow.ClientID ) )
+                processor.Process();
+
+                // Verify that the set of people tagged as "Staff" have reverted to the initial set.
+                afterUpdatePersonIdList = currentTaggedPersonQuery.ToList();
+
+                CollectionAssert.AreEquivalent( initialTaggedPersonIdList, afterUpdatePersonIdList, "Some candidates were not untagged." );
+            }
+        }
+
+        [TestMethod]
+        public void BulkUpdateProcessor_AddNote_Succeeds()
+        {
+            // Developer settings.
+            const int candidateCount = 100;
+
+            const string NoteTypePersonal = "66A1B9D7-7EFA-40F3-9415-E54437977D60";
+
+            var TestNoteText = string.Format( "Test Note ({0})", Guid.NewGuid() );
+
+            var rockContext = new RockContext();
+
+            var personEntityType = EntityTypeCache.Get( typeof( Rock.Model.Person ) );
+
+            var noteTypeService = new NoteTypeService( rockContext );
+
+            var noteTypePersonal = noteTypeService.Get( NoteTypePersonal.AsGuid() );
+
+            var noteService = new NoteService( rockContext );
+
+            var personService = new PersonService( rockContext );
+
+            var personQuery = personService.Queryable();
+
+            var currentNotedPersonQuery = noteService.Queryable()
+                .AsNoTracking()
+                .Where( x => x.NoteTypeId == noteTypePersonal.Id )
+                .Where( x => x.Text == TestNoteText )
+                .Select( p => p.EntityId ?? 0 );
+
+            var initialNotedPersonIdList = currentNotedPersonQuery.ToList();
+
+            var candidatePersonQuery = personService.Queryable()
+                .AsNoTracking()
+                .Where( x => !initialNotedPersonIdList.Contains( x.Id ) )
+                .OrderBy( x => x.Id )
+                .Take( candidateCount );
+
+            var candidatePersonIdList = candidatePersonQuery.Select( x => x.Id ).ToList();
+
+            // Initialize the processor
+            List<int> afterUpdatePersonIdList;
+
+            var processor = GetDefaultProcessor();
+
+            processor.InstanceId = "Add_Notes";
+            processor.UpdateNoteText = TestNoteText;
+            processor.UpdateNoteIsAlert = true;
+            processor.UpdateNoteIsPrivate = true;
+            processor.UpdateNoteTypeId = noteTypePersonal.Id;
+
+            processor.PersonIdList = candidatePersonIdList;
+
+            // Add new tag and verify.
+            processor.UpdateNoteAction = PersonBulkUpdateProcessor.NoteChangeActionSpecifier.Add;
+
+            processor.Process();
+
+            // Verify that all of the candidate people are now tagged.
+            afterUpdatePersonIdList = currentNotedPersonQuery.ToList();
+
+            CollectionAssert.IsSubsetOf( candidatePersonIdList, afterUpdatePersonIdList, "One or more candidates are not tagged." );
+        }
+
+        #endregion
+
+        #region Groups
+
+        private static string TestGuidGroupGreeters = "39FA00EE-25DD-47A3-942B-BFCF1975D661";
+
+        [TestMethod]
+        public void BulkUpdateProcessor_AddModifyRemoveGroupMembership_Succeeds()
+        {
+            const int candidateCount = 100;
+
+            // Make sure that the query implements...
+            // * NoTracking() so the results are refreshed for each execution.
+            // * OrderBy so that the result sets are predictable.
+            var dataContext = new RockContext();
+
+            var groupService = new GroupService( dataContext );
+            var groupUshers = groupService.Get( TestGuidGroupGreeters.AsGuid() );
+
+            var groupMemberService = new GroupMemberService( dataContext );
+
+            // Get the list of current group members.
+            var currentMembersQuery = groupMemberService.Queryable()
+                .AsNoTracking()
+                .Where( x => x.GroupId == groupUshers.Id )
+                .Select( x => x.PersonId );
+
+            var roleMember = groupUshers.GroupType.Roles.First( x => x.Name == "Member" );
+
+            var personService = new PersonService( dataContext );
+
+            var existingMembersIdList = currentMembersQuery.ToList();
+
+            // Get the list of candidate group members.
+            var candidatePersonQuery = personService.Queryable()
+                    .AsNoTracking()
+                    .Where( x => x.Gender == Gender.Female )
+                    .Where( x => !existingMembersIdList.Contains( x.Id ) )
+                    .Take( candidateCount );
+
+            var candidatePersonIdList = candidatePersonQuery.Select( x => x.Id ).ToList();
+
+            Assert.IsTrue( candidatePersonIdList.Any(), "No target people found" );
+
+            // Update 
+            var processor = GetDefaultProcessor();
+
+            processor.UpdateGroupId = groupUshers.Id;
+            processor.PersonIdList = candidatePersonIdList;
+
+            // Set property value to updated value and verify.
+            processor.UpdateGroupAction = PersonBulkUpdateProcessor.GroupChangeActionSpecifier.Add;
+            processor.UpdateGroupRoleId = roleMember.Id;
+            processor.UpdateGroupStatus = GroupMemberStatus.Active;
+
+            processor.Process();
+
+            // Verify that all of the new members have been added.
+            var afterUpdatePersonIdList = currentMembersQuery.Where( x => candidatePersonIdList.Contains( x ) ).ToList();
+
+            CollectionAssert.AreEquivalent( candidatePersonIdList, afterUpdatePersonIdList, "One or more target records were not added." );
+
+            // Update the new member records
+            processor.UpdateGroupAction = PersonBulkUpdateProcessor.GroupChangeActionSpecifier.Modify;
+            processor.UpdateGroupStatus = GroupMemberStatus.Inactive;
+            processor.SelectedFields.Add( PersonBulkUpdateProcessor.FieldNames.GroupMemberStatus );
+
+            processor.Process();
+
+            // Verify that all the candidate members have been updated.
+            var notUpdatedCandidateMembersQuery = groupMemberService.Queryable()
+                    .AsNoTracking()
+                    .Where( x => x.GroupId == groupUshers.Id && x.GroupMemberStatus == GroupMemberStatus.Active )
+                    .Where( x => candidatePersonIdList.Contains( x.PersonId ) );
+
+            Assert.IsFalse( notUpdatedCandidateMembersQuery.Any(), "One or more target records were not updated." );
+
+            // Remove the members
+            processor.UpdateGroupAction = PersonBulkUpdateProcessor.GroupChangeActionSpecifier.Remove;
+
+            processor.Process();
+
+            // Verify that we have the same candidate records as we started with, else the bulk update has not correctly reverted to the original value.
+            afterUpdatePersonIdList = currentMembersQuery.ToList();
+
+            CollectionAssert.AreEquivalent( existingMembersIdList, afterUpdatePersonIdList );
+        }
+
+        #endregion
+
+        #region Multi-threading
+
+        [TestMethod]
+        public void BulkUpdateProcessor_MultithreadingEnabled_ProcessesSuccessfully()
+        {
+            const int candidateCount = 101;
+
+            // Make sure that the query implements...
+            // * NoTracking() so the results are refreshed for each execution.
+            // * OrderBy so that the result sets are predictable.
+            var dataContext = new RockContext();
+
+            var groupService = new GroupService( dataContext );
+            var groupUshers = groupService.Get( TestGuidGroupGreeters.AsGuid() );
+
+            var groupMemberService = new GroupMemberService( dataContext );
+
+            // Get the list of current group members.
+            var currentMembersQuery = groupMemberService.Queryable()
+                .AsNoTracking()
+                .Where( x => x.GroupId == groupUshers.Id )
+                .OrderBy( x => x.Id )
+                .Select( x => x.PersonId );
+
+            var roleMember = groupUshers.GroupType.Roles.First( x => x.Name == "Member" );
+
+            var personService = new PersonService( dataContext );
+
+            var existingMembersIdList = currentMembersQuery.ToList();
+
+            // Get the list of candidate group members.
+            var candidatePersonQuery = personService.Queryable()
+                    .AsNoTracking()
+                    .Where( x => x.Gender == Gender.Female )
+                    .Where( x => !existingMembersIdList.Contains( x.Id ) )
+                    .OrderBy( x => x.Id )
+                    .Take( candidateCount );
+
+            var candidatePersonIdList = candidatePersonQuery.Select( x => x.Id ).ToList();
+
+            Assert.IsTrue( candidatePersonIdList.Any(), "No target people found" );
+
+            // Add new members and verify.
+            var processor = GetDefaultProcessor();
+
+            processor.TaskCount = 4;
+
+            processor.UpdateGroupId = groupUshers.Id;
+            processor.PersonIdList = candidatePersonIdList;
+
+            processor.UpdateGroupAction = PersonBulkUpdateProcessor.GroupChangeActionSpecifier.Add;
+            processor.UpdateGroupRoleId = roleMember.Id;
+            processor.UpdateGroupStatus = GroupMemberStatus.Active;
+
+            processor.Process();
+
+            var afterUpdatePersonIdList = currentMembersQuery.Where( x => candidatePersonIdList.Contains( x ) ).ToList();
+
+            CollectionAssert.AreEquivalent( candidatePersonIdList, afterUpdatePersonIdList, "One or more target records were not added." );
+
+            // Remove the members
+            processor.UpdateGroupAction = PersonBulkUpdateProcessor.GroupChangeActionSpecifier.Remove;
+
+            processor.Process();
+
+            // Verify that we have the same candidate records as we started with, else the bulk update has not correctly reverted to the original value.
+            afterUpdatePersonIdList = currentMembersQuery.ToList();
+
+            CollectionAssert.AreEquivalent( existingMembersIdList, afterUpdatePersonIdList );
+        }
+
+        #endregion
+
+        #region Support functions
+
+        private List<Guid> GetWellKnownPeopleGuidList()
+        {
+            var personGuidList = new List<Guid>();
+
+            personGuidList.Add( TedDeckerPersonGuid.AsGuid() );
+            personGuidList.Add( BillMarblePersonGuid.AsGuid() );
+
+            return personGuidList;
+        }
+
+        private PersonBulkUpdateProcessor GetDefaultProcessor()
+        {
+            var processor = new PersonBulkUpdateProcessor();
+
+            processor.TaskCount = 4;
+
+            var dataContext = new RockContext();
+
+            var personService = new PersonService( dataContext );
+
+            processor.CurrentPerson = new CoreModuleTestHelper( "" ).GetAdminPersonOrThrow( dataContext );
+
+            // Add some well-known people.
+            var personGuidList = GetWellKnownPeopleGuidList();
+
+            var personIdQuery = personService.Queryable().Where( x => personGuidList.Contains( x.Guid ) ).Select( x => x.Id );
+
+            processor.PersonIdList.AddRange( personIdQuery );
+
+            // Add some random people for bulk
+            personIdQuery = personService.Queryable().Take( 1000 ).Select( x => x.Id );
+
+            processor.PersonIdList.AddRange( personIdQuery );
+
+            processor.StatusUpdated += ( s, e ) =>
             {
-                var followingAction = ddlFollow.SelectedValue;
-
-                if ( followingAction == "Add" )
+                if ( e.UpdateType == PersonBulkUpdateProcessor.ProcessorStatusUpdateTypeSpecifier.Progress )
                 {
-                    processor.UpdateFollowingAction = PersonBulkUpdateProcessor.FollowingChangeActionSpecifier.Add;
+                    Trace.WriteLine( $"[{e.StatusDateTime}] {e.ProcessedCount} of {e.TotalCount} completed: {e.StatusMessage} [{e.StatusDetail}]" );
                 }
-                else if ( followingAction == "Remove" )
+                else
                 {
-                    processor.UpdateFollowingAction = PersonBulkUpdateProcessor.FollowingChangeActionSpecifier.Remove;
+                    Trace.WriteLine( $"[{e.StatusDateTime}] {e.StatusMessage} [{e.StatusDetail}]" );
                 }
-
-                processor.UpdateFollowingPersonId = this.CurrentPersonId;
-            }
-
-            // Add Tag
-            if ( !string.IsNullOrWhiteSpace( ddlTagList.SelectedValue ) )
-            {
-                var tagAction = ddlTagAction.SelectedValue;
-
-                if ( tagAction == "Add" )
-                {
-                    processor.UpdateTagAction = PersonBulkUpdateProcessor.TagChangeActionSpecifier.Add;
-                }
-                else if ( tagAction == "Remove" )
-                {
-                    processor.UpdateTagAction = PersonBulkUpdateProcessor.TagChangeActionSpecifier.Remove;
-                }
-            }
-
-            processor.UpdateTagId = ddlTagList.SelectedValue.AsInteger();
-
-            // Set post-processing Workflows
-            var selectedWorkflows = rlbWorkFlowType.Items
-                                           .Cast<ListItem>()
-                                           .Where( x => x.Selected )
-                                           .Select( x => x.Value )
-                                           .ToList();
-
-            processor.PostUpdateWorkflowIdList = selectedWorkflows;
-
-            // Field Selections
-            processor.SelectedFields = new List<string>();
-
-            foreach ( var fieldControlId in this.SelectedFields )
-            {
-                var ctl = FindControlByClientId( this.Page, fieldControlId );
-
-                if ( ctl != null )
-                {
-                    processor.SelectedFields.Add( ctl.ID );
-                }
-            }
-
-            processor.CurrentPerson = this.CurrentPerson;
+            };
 
             return processor;
         }
 
-        private Dictionary<string, string> GetPersonAttributeValueSettings( RockContext rockContext )
-        {
-            var newPersonAttributeValues = new Dictionary<string, string>();
-
-            var selectedCategories = new List<CategoryCache>();
-            foreach ( Guid categoryGuid in AttributeCategories )
-            {
-                var category = CategoryCache.Get( categoryGuid, rockContext );
-                if ( category != null )
-                {
-                    selectedCategories.Add( category );
-                }
-            }
-
-            int categoryIndex = 0;
-            foreach ( var category in selectedCategories.OrderBy( c => c.Name ) )
-            {
-                PanelWidget pw = null;
-                string controlId = "pwAttributes_" + category.Id.ToString();
-                if ( categoryIndex % 2 == 0 )
-                {
-                    pw = phAttributesCol1.FindControl( controlId ) as PanelWidget;
-                }
-                else
-                {
-                    pw = phAttributesCol2.FindControl( controlId ) as PanelWidget;
-                }
-                categoryIndex++;
-
-                if ( pw != null )
-                {
-                    var orderedAttributeList = new AttributeService( rockContext ).GetByCategoryId( category.Id, false )
-                        .OrderBy( a => a.Order ).ThenBy( a => a.Name );
-                    foreach ( var attribute in orderedAttributeList )
-                    {
-                        if ( attribute.IsAuthorized( Authorization.EDIT, CurrentPerson ) )
-                        {
-                            var attributeCache = AttributeCache.Get( attribute.Id );
-
-                            Control attributeControl = pw.FindControl( string.Format( "attribute_field_{0}", attribute.Id ) );
-
-                            if ( attributeControl != null && SelectedFields.Contains( attributeControl.ClientID ) )
-                            {
-                                string newValue = attributeCache.FieldType.Field.GetEditValue( attributeControl, attributeCache.QualifierValues );
-
-                                newPersonAttributeValues.Add( attributeCache.Key, newValue );
-                            }
-                        }
-                    }
-                }
-            }
-
-            return newPersonAttributeValues;
-        }
-
-        private Dictionary<string, string> GetGroupMemberAttributeValues( RockContext rockContext, int? groupId, string action )
-        {
-            var selectedGroupAttributeValues = new Dictionary<string, string>();
-
-            if ( groupId.HasValue )
-            {
-                var group = new GroupService( rockContext ).Get( groupId.Value );
-
-                if ( group != null )
-                {
-                    // Get the attribute values updated
-                    var gm = new GroupMember();
-                    gm.Group = group;
-                    gm.GroupId = group.Id;
-                    gm.LoadAttributes( rockContext );
-                    var selectedGroupAttributes = new List<AttributeCache>();
-
-                    foreach ( var attributeCache in gm.Attributes.Select( a => a.Value ) )
-                    {
-                        Control attributeControl = phAttributes.FindControl( string.Format( "attribute_field_{0}", attributeCache.Id ) );
-                        if ( attributeControl != null && ( action == "Add" || SelectedFields.Contains( attributeControl.ClientID ) ) )
-                        {
-                            string newValue = attributeCache.FieldType.Field.GetEditValue( attributeControl, attributeCache.QualifierValues );
-                            selectedGroupAttributes.Add( attributeCache );
-                            selectedGroupAttributeValues.Add( attributeCache.Key, newValue );
-                        }
-                    }
-                }
-            }
-
-            return selectedGroupAttributeValues;
-        }
-
-        /// <summary>
-        /// Find a control instance recursively by the unique ClientId.
-        /// </summary>
-        /// <param name="rootControl"></param>
-        /// <param name="clientId"></param>
-        /// <returns></returns>
-        private Control FindControlByClientId( Control rootControl, string clientId )
-        {
-            if ( rootControl.ClientID == clientId )
-            {
-                return rootControl;
-            }
-
-            foreach ( Control controlToSearch in rootControl.Controls )
-            {
-                var controlToReturn = FindControlByClientId( controlToSearch, clientId );
-
-                if ( controlToReturn != null )
-                {
-                    return controlToReturn;
-                }
-            }
-
-            return null;
-        }
-
-        /// <summary>
-        /// Binds the individuals.
-        /// </summary>
-        private void BindIndividuals()
-        {
-            int individualCount = Individuals.Count();
-            lNumIndividuals.Text = individualCount.ToString( "N0" ) +
-                ( individualCount == 1 ? " Person" : " People" );
-
-            ppAddPerson.PersonId = Rock.Constants.None.Id;
-            ppAddPerson.PersonName = "Add Person";
-
-            int displayCount = int.MaxValue;
-
-            if ( !ShowAllIndividuals )
-            {
-                int.TryParse( GetAttributeValue( AttributeKey.DisplayCount ), out displayCount );
-            }
-
-            if ( displayCount > 0 && displayCount < Individuals.Count )
-            {
-                rptIndividuals.DataSource = Individuals.Take( displayCount ).ToList();
-                lbShowAllIndividuals.Visible = true;
-            }
-            else
-            {
-                rptIndividuals.DataSource = Individuals.ToList();
-                lbShowAllIndividuals.Visible = false;
-            }
-
-            rptIndividuals.DataBind();
-        }
-
-        private void SetControlSelection()
-        {
-            SetControlSelection( dvpTitle, "Title" );
-            SetControlSelection( dvpConnectionStatus, "Connection Status", _canEditConnectionStatus );
-            SetControlSelection( ddlGender, "Gender" );
-            SetControlSelection( dvpMaritalStatus, "Marital Status" );
-            SetControlSelection( ddlGradePicker, GlobalAttributesCache.Get().GetValue( "core.GradeLabel" ) );
-            ypGraduation.Enabled = ddlGradePicker.Enabled;
-
-            SetControlSelection( cpCampus, "Campus" );
-            SetControlSelection( ddlCommunicationPreference, "Communication Preference" );
-            SetControlSelection( dvpSuffix, "Suffix" );
-            SetControlSelection( dvpRecordStatus, "Record Status", _canEditRecordStatus );
-            SetControlSelection( ddlIsEmailActive, "Email Status" );
-            SetControlSelection( ddlEmailPreference, "Email Preference" );
-            SetControlSelection( tbEmailNote, "Email Note" );
-            SetControlSelection( ddlFollow, "Follow" );
-            SetControlSelection( tbSystemNote, "System Note" );
-            SetControlSelection( dvpReviewReason, "Review Reason" );
-            SetControlSelection( tbReviewReasonNote, "Review Reason Note" );
-        }
-
-        private void SetControlSelection( IRockControl control, string label )
-        {
-            bool controlEnabled = SelectedFields.Contains( control.ClientID, StringComparer.OrdinalIgnoreCase );
-            string iconCss = controlEnabled ? "fa-check-circle-o" : "fa-circle-o";
-            control.Label = string.Format( "<span class='js-select-item'><i class='fa {0}'></i></span> {1}", iconCss, label );
-            var webControl = control as WebControl;
-            if ( webControl != null )
-            {
-                webControl.Enabled = controlEnabled;
-            }
-        }
-        private void SetControlSelection( IRockControl control, string label, bool canEdit )
-        {
-            if ( canEdit )
-            {
-                SetControlSelection( control, label );
-            }
-        }
-
-        private void BuildAttributes( RockContext rockContext, bool setValues = false )
-        {
-            var selectedCategories = new List<CategoryCache>();
-            foreach ( Guid categoryGuid in AttributeCategories )
-            {
-                var category = CategoryCache.Get( categoryGuid, rockContext );
-                if ( category != null )
-                {
-                    selectedCategories.Add( category );
-                }
-            }
-
-            int categoryIndex = 0;
-            foreach ( var category in selectedCategories.OrderBy( c => c.Name ) )
-            {
-                var pw = new PanelWidget();
-                if ( categoryIndex % 2 == 0 )
-                {
-                    phAttributesCol1.Controls.Add( pw );
-                }
-                else
-                {
-                    phAttributesCol2.Controls.Add( pw );
-                }
-                pw.ID = "pwAttributes_" + category.Id.ToString();
-                categoryIndex++;
-
-
-                if ( !string.IsNullOrWhiteSpace( category.IconCssClass ) )
-                {
-                    pw.TitleIconCssClass = category.IconCssClass;
-                }
-                pw.Title = category.Name;
-
-                var orderedAttributeList = new AttributeService( rockContext ).GetByCategoryId( category.Id, false )
-                    .OrderBy( a => a.Order ).ThenBy( a => a.Name );
-                foreach ( var attribute in orderedAttributeList )
-                {
-                    if ( attribute.IsAuthorized( Authorization.EDIT, CurrentPerson ) )
-                    {
-                        var attributeCache = AttributeCache.Get( attribute.Id );
-
-                        string clientId = string.Format( "{0}_attribute_field_{1}", pw.ClientID, attribute.Id );
-                        bool controlEnabled = SelectedFields.Contains( clientId, StringComparer.OrdinalIgnoreCase );
-                        string iconCss = controlEnabled ? "fa-check-circle-o" : "fa-circle-o";
-
-                        string labelText = string.Format( "<span class='js-select-item'><i class='fa {0}'></i></span> {1}", iconCss, attributeCache.Name );
-                        Control control = attributeCache.AddControl( pw.Controls, string.Empty, string.Empty, setValues, true, false, labelText );
-
-                        if ( !( control is RockCheckBox ) && !( control is PersonPicker ) && !( control is ItemPicker ) )
-                        {
-                            var webControl = control as WebControl;
-                            if ( webControl != null )
-                            {
-                                webControl.Enabled = controlEnabled;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        private void SetGroupControls()
-        {
-            string action = ddlGroupAction.SelectedValue;
-            if ( action == "Remove" )
-            {
-                ddlGroupMemberStatus.Visible = false;
-                ddlGroupRole.Visible = false;
-            }
-            else
-            {
-                var rockContext = new RockContext();
-                Group group = null;
-
-                int? groupId = gpGroup.SelectedValueAsId();
-                if ( groupId.HasValue )
-                {
-                    group = new GroupService( rockContext ).Get( groupId.Value );
-                }
-
-                if ( group != null )
-                {
-                    GroupId = group.Id;
-
-                    ddlGroupRole.Visible = true;
-                    ddlGroupMemberStatus.Visible = true;
-
-                    if ( action == "Add" )
-                    {
-                        pnlGroupMemberStatus.RemoveCssClass( "fade-inactive" );
-                        pnlGroupMemberAttributes.RemoveCssClass( "fade-inactive" );
-
-                        ddlGroupRole.Label = "Role";
-                        ddlGroupRole.Enabled = true;
-
-                        ddlGroupMemberStatus.Label = "Member Status";
-                        ddlGroupMemberStatus.Enabled = true;
-                    }
-                    else
-                    {
-                        pnlGroupMemberStatus.AddCssClass( "fade-inactive" );
-                        pnlGroupMemberAttributes.AddCssClass( "fade-inactive" );
-                        SetControlSelection( ddlGroupRole, "Role" );
-                        SetControlSelection( ddlGroupMemberStatus, "Member Status" );
-                    }
-
-                    var groupType = GroupTypeCache.Get( group.GroupTypeId );
-                    ddlGroupRole.Items.Clear();
-                    ddlGroupRole.DataSource = groupType.Roles.OrderBy( r => r.Order ).ToList();
-                    ddlGroupRole.DataBind();
-                    ddlGroupRole.SelectedValue = groupType.DefaultGroupRoleId.ToString();
-
-                    ddlGroupMemberStatus.SelectedValue = "1";
-
-                    phAttributes.Controls.Clear();
-                    BuildGroupAttributes( group, rockContext, true );
-                }
-                else
-                {
-                    ddlGroupRole.Visible = false;
-                    ddlGroupMemberStatus.Visible = false;
-
-                    ddlGroupRole.Items.Add( new ListItem( string.Empty, string.Empty ) );
-                    ddlGroupMemberStatus.Items.Add( new ListItem( string.Empty, string.Empty ) );
-                }
-            }
-        }
-
-        private void BuildGroupAttributes( RockContext rockContext )
-        {
-            if ( GroupId.HasValue )
-            {
-                var group = new GroupService( rockContext ).Get( GroupId.Value );
-                BuildGroupAttributes( group, rockContext, false );
-            }
-        }
-
-        private void BuildGroupAttributes( Group group, RockContext rockContext, bool setValues )
-        {
-            if ( group != null )
-            {
-                string action = ddlGroupAction.SelectedValue;
-
-                var groupMember = new GroupMember();
-                groupMember.Group = group;
-                groupMember.GroupId = group.Id;
-                groupMember.LoadAttributes( rockContext );
-
-                foreach ( var attributeCache in groupMember.Attributes.Select( a => a.Value ) )
-                {
-                    string labelText = attributeCache.Name;
-                    bool controlEnabled = true;
-                    if ( action == "Update" )
-                    {
-                        string clientId = string.Format( "{0}_attribute_field_{1}", phAttributes.NamingContainer.ClientID, attributeCache.Id );
-                        controlEnabled = SelectedFields.Contains( clientId, StringComparer.OrdinalIgnoreCase );
-
-                        string iconCss = controlEnabled ? "fa-check-circle-o" : "fa-circle-o";
-                        labelText = string.Format( "<span class='js-select-item'><i class='fa {0}'></i></span> {1}", iconCss, attributeCache.Name );
-                    }
-
-                    Control control = attributeCache.AddControl( phAttributes.Controls, attributeCache.DefaultValue, string.Empty, setValues, true, attributeCache.IsRequired, labelText );
-
-                    // Q: Why don't we enable if the control is a RockCheckBox?
-                    if ( action == "Update" && !( control is RockCheckBox ) )
-                    {
-                        var webControl = control as WebControl;
-                        if ( webControl != null )
-                        {
-                            webControl.Enabled = controlEnabled;
-                        }
-                    }
-                }
-            }
-        }
+        #endregion
 
         #endregion
 
-        #region Helper Classes
+        #region Test Class
 
-        /// <summary>
-        /// Helper class used to maintain state of individuals
-        /// </summary>
-        [Serializable]
-        protected class Individual
-        {
-            /// <summary>
-            /// Gets or sets the person id.
-            /// </summary>
-            /// <value>
-            /// The person id.
-            /// </value>
-            public int PersonId { get; set; }
-
-            /// <summary>
-            /// Gets or sets the name of the person.
-            /// </summary>
-            /// <value>
-            /// The name of the person.
-            /// </value>
-            public string PersonName { get; set; }
-
-            /// <summary>
-            /// Initializes a new instance of the <see cref="Individual" /> class.
-            /// </summary>
-            /// <param name="personId">The person id.</param>
-            /// <param name="personName">Name of the person.</param>
-            /// <param name="status">The status.</param>
-            public Individual( Person person )
-            {
-                PersonId = person.Id;
-                PersonName = person.FullName;
-            }
-
-            /// <summary>
-            /// Initializes a new instance of the <see cref="Individual"/> class.
-            /// </summary>
-            /// <param name="id">The identifier.</param>
-            /// <param name="name">The name.</param>
-            public Individual( int id, string name )
-            {
-                PersonId = id;
-                PersonName = name;
-            }
-
-        }
-
-        #endregion
+        /* [2020-04-29] DL
+         * This is the class that is the target of these integration tests.
+         * It is deployed as a private support class in the BulkUpdate block (v10.3) to allow file-copy replacement of the existing block.
+         * As a class in a web project, it can't be instantiated or referenced in this test project directly, hence the need to create this copy for testing purposes.
+         * To run these integration tests correctly, ensure that you have copied/pasted the most recent version of the PersonBulkUpdateProcessor class from the BulkUpdate.ascx file.
+         * Any changes made to this class during unit testing should be copied/pasted back into the BulkUpdate block.
+         */
 
         #region Bulk Update Processor
 
@@ -1471,7 +1147,7 @@ namespace RockWeb.Blocks.Crm
             /// <summary>
             /// A list of identifiers of workflows that should be executed for each person after the update.
             /// </summary>
-            public List<string> PostUpdateWorkflowIdList;
+            public List<string> PostUpdateWorkflowIdList { get; set; }
 
             /// <summary>
             /// Set an update value for the specified field.
@@ -2866,5 +2542,8 @@ namespace RockWeb.Blocks.Crm
         }
 
         #endregion
+
+        #endregion
+
     }
 }
